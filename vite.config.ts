@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 
 export default defineConfig({
+  base: '/s24-erp/', // <--- ¡Añade esta línea aquí!
   plugins: [react()],
   resolve: {
     alias: {
