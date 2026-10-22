@@ -3,7 +3,7 @@
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
 
 jobs:
   build:
@@ -31,17 +31,12 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Capacitor
+      - name: Install Capacitor & Build APK
         run: |
           npm install @capacitor/core @capacitor/cli @capacitor/android
           npx cap init "S24 ERP" "com.s24seguridad.erp" --web-dir=dist
           npx cap add android
-
-      - name: Sync Capacitor
-        run: npx cap sync android
-
-      - name: Build APK
-        run: |
+          npx cap sync android
           cd android
           chmod +x ./gradlew
           ./gradlew assembleDebug
