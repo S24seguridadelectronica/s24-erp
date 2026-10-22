@@ -1,12 +1,18 @@
-﻿import { createBrowserRouter, Navigate } from 'react-router-dom'
+﻿import { CctvCalculator } from '@/modules/tools/CctvCalculator';
+import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { MainLayout } from '@/components/layout/MainLayout'
 import { DashboardPage } from '@/modules/dashboard/DashboardPage'
 import { LoginPage } from '@/modules/auth/LoginPage'
 import { ProtectedRoute } from './ProtectedRoute'
 import { UsersPage } from '@/modules/admin/users/UsersPage'
 import { RolesPage } from '@/modules/admin/roles/RolesPage'
+import { AuditLogsPage } from '@/modules/admin/audit/AuditLogsPage'
+import { ImportPage } from '@/modules/admin/import/ImportPage'
+import { DistributionConfigPage } from '@/modules/admin/distribution/DistributionConfigPage'
+import { AssignmentsPage } from '@/modules/admin/distribution/AssignmentsPage'
 import { CustomersPage } from '@/modules/crm/customers/CustomersPage'
 import { OpportunitiesPage } from '@/modules/crm/opportunities/OpportunitiesPage'
+import { SpreadsheetPage } from '@/modules/crm/spreadsheet/SpreadsheetPage'
 import { QuotesPage } from '@/modules/sales/quotes/QuotesPage'
 import { WorkOrdersPage } from '@/modules/operations/work-orders/WorkOrdersPage'
 import { ProductsPage } from '@/modules/inventory/products/ProductsPage'
@@ -31,7 +37,8 @@ export const router = createBrowserRouter([
       { index: true, element: <DashboardPage /> },
       { path: 'crm', children: [
           { index: true, element: <CustomersPage /> },
-          { path: 'opportunities', element: <OpportunitiesPage /> }
+          { path: 'opportunities', element: <OpportunitiesPage /> },
+          { path: 'spreadsheet', element: <SpreadsheetPage /> }
         ]
       },
       { path: 'sales', children: [
@@ -63,14 +70,19 @@ export const router = createBrowserRouter([
           { path: 'operations', element: <OperationsReport /> }
         ]
       },
-      { path: 'call-center', element: <div className='p-4'><h2>Call Center - Próximamente</h2></div> },
-      { path: 'cms', element: <div className='p-4'><h2>CMS - Próximamente</h2></div> },
       { path: 'admin', children: [
           { index: true, element: <UsersPage /> },
-          { path: 'roles', element: <RolesPage /> }
+          { path: 'roles', element: <RolesPage /> },
+          { path: 'audit', element: <AuditLogsPage /> },
+          { path: 'import', element: <ImportPage /> },
+          { path: 'distribution', element: <DistributionConfigPage /> },
+          { path: 'assignments', element: <AssignmentsPage /> }
         ]
       },
+      { path: 'call-center', element: <div className='p-4'><h2>Call Center - Próximamente</h2></div> },
+      { path: 'cms', element: <div className='p-4'><h2>CMS - Próximamente</h2></div> },
     ],
   },
   { path: '*', element: <Navigate to='/' replace /> },
 ])
+

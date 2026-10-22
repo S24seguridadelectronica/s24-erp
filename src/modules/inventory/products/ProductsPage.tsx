@@ -1,8 +1,9 @@
 ﻿import { useState, useEffect } from 'react';
-import { Card, Table, Button, Badge, Spinner, Alert, Form, InputGroup, Row, Col } from 'react-bootstrap';
-import { getProducts, deleteProduct } from '@/services/api/inventory';
-import { Package, Search, Edit2, Trash2, Plus, AlertTriangle } from 'lucide-react';
+import { Card, Table, Button, Badge, Spinner, Alert, Form, InputGroup, Row, Col, Image } from 'react-bootstrap';
+import { getProducts, deleteProduct, uploadProductImage, updateProduct } from '@/services/api/inventory';
+import { Package, Search, Edit2, Trash2, Plus, AlertTriangle, ImageIcon, Upload } from 'lucide-react';
 import { ProductForm } from './ProductForm';
+import { ImportProductsModal } from './ImportProductsModal';
 
 export function ProductsPage() {
   const [products, setProducts] = useState<any[]>([]);
@@ -11,7 +12,10 @@ export function ProductsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
+  const [uploadingId, setUploadingId] = useState<number | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   useEffect(() => { loadProducts(); }, []);
 
@@ -38,6 +42,32 @@ export function ProductsPage() {
     }
   };
 
+  const handleImageClick = async (productId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async (event) => {
+      const file = (event.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      try {
+        setUploadingId(productId);
+        setUploadError(null);
+        
+        const imageUrl = await uploadProductImage(productId, file);
+        await updateProduct(productId, { image_url: imageUrl });
+        
+        await loadProducts();
+      } catch (err: any) {
+        setUploadError('Error al subir imagen: ' + err.message);
+      } finally {
+        setUploadingId(null);
+      }
+    };
+    input.click();
+  };
+
   const categories = [...new Set(products.map(p => p.category).filter(Boolean))];
 
   const filteredProducts = products.filter(product => {
@@ -58,9 +88,14 @@ export function ProductsPage() {
           <h2 className="mb-1">Productos</h2>
           <p className="text-muted mb-0">Catálogo de productos y control de inventario</p>
         </div>
-        <Button variant="primary" onClick={() => { setEditingProduct(null); setShowForm(true); }}>
-          <Plus size={18} className="me-2" /> Nuevo Producto
-        </Button>
+        <div>
+          <Button variant="success" className="me-2" onClick={() => setShowImportModal(true)}>
+            <Upload size={18} className="me-2" /> Importar Excel
+          </Button>
+          <Button variant="primary" onClick={() => { setEditingProduct(null); setShowForm(true); }}>
+            <Plus size={18} className="me-2" /> Nuevo Producto
+          </Button>
+        </div>
       </div>
 
       {lowStockProducts.length > 0 && (
@@ -70,6 +105,7 @@ export function ProductsPage() {
         </Alert>
       )}
 
+      {uploadError && <Alert variant="danger" className="mb-3">{uploadError}</Alert>}
       {error && <Alert variant="danger">{error}</Alert>}
 
       <Card className="border-0 shadow-sm mb-4">
@@ -96,7 +132,8 @@ export function ProductsPage() {
           <Table responsive hover className="mb-0">
             <thead className="bg-light">
               <tr>
-                <th className="ps-4">SKU</th>
+                <th className="ps-4" style={{width: '80px'}}>Imagen</th>
+                <th>SKU</th>
                 <th>Producto</th>
                 <th>Categoría</th>
                 <th>Stock</th>
@@ -108,13 +145,66 @@ export function ProductsPage() {
             </thead>
             <tbody>
               {filteredProducts.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-5 text-muted">No hay productos registrados.</td></tr>
+                <tr><td colSpan={9} className="text-center py-5 text-muted">No hay productos registrados.</td></tr>
               ) : (
                 filteredProducts.map((product) => {
                   const isLowStock = product.stock_quantity <= product.min_stock;
                   return (
                     <tr key={product.id}>
-                      <td className="ps-4 fw-semibold">{product.sku}</td>
+                      <td className="ps-4">
+                        {product.image_url ? (
+                          <div style={{ position: 'relative', cursor: 'pointer' }} onClick={(e) => handleImageClick(product.id, e)}>
+                            <Image 
+                              src={product.image_url} 
+                              rounded 
+                              style={{ 
+                                width: '50px', 
+                                height: '50px', 
+                                objectFit: 'cover',
+                                border: '1px solid #dee2e6'
+                              }} 
+                            />
+                            {uploadingId === product.id && (
+                              <div style={{
+                                position: 'absolute',
+                                top: 0, left: 0, right: 0, bottom: 0,
+                                backgroundColor: 'rgba(255,255,255,0.7)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderRadius: '4px'
+                              }}>
+                                <Spinner animation="border" size="sm" variant="primary" />
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div 
+                            onClick={(e) => handleImageClick(product.id, e)}
+                            style={{ 
+                              width: '50px', 
+                              height: '50px', 
+                              border: '2px dashed #0d6efd', 
+                              borderRadius: '4px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              backgroundColor: '#f8f9fa',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s'
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#e7f1ff')}
+                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#f8f9fa')}
+                          >
+                            {uploadingId === product.id ? (
+                              <Spinner animation="border" size="sm" variant="primary" />
+                            ) : (
+                              <Upload size={20} className="text-primary" />
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="fw-semibold">{product.sku}</td>
                       <td>
                         <div className="fw-semibold">{product.name}</div>
                         {product.brand && <small className="text-muted">{product.brand}</small>}
@@ -151,6 +241,7 @@ export function ProductsPage() {
       </Card>
 
       <ProductForm show={showForm} onHide={() => setShowForm(false)} product={editingProduct} onSuccess={loadProducts} />
+      <ImportProductsModal show={showImportModal} onHide={() => setShowImportModal(false)} onSuccess={loadProducts} />
     </div>
   );
 }

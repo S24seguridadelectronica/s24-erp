@@ -1,4 +1,5 @@
 ﻿import { supabase } from '../supabase/client';
+import { audit } from './audit';
 
 export interface QuoteItem {
   id?: number;
@@ -36,7 +37,6 @@ export async function getQuotes() {
     .from('quotes')
     .select('*, customers(full_name, company_name), opportunities(title)')
     .order('created_at', { ascending: false });
-  
   if (error) throw error;
   return data as any[];
 }
@@ -47,13 +47,11 @@ export async function getQuoteById(id: number) {
     .select('*, items(*), customers(full_name, company_name, email, phone, address, city)')
     .eq('id', id)
     .single();
-  
   if (error) throw error;
   return data as any;
 }
 
 export async function createQuote(quote: any, items: Omit<QuoteItem, 'id' | 'quote_id'>[]) {
-  // Mapear campos camelCase a snake_case para Supabase
   const quoteData = {
     quote_number: quote.quote_number,
     customer_id: quote.customer_id,
@@ -69,18 +67,13 @@ export async function createQuote(quote: any, items: Omit<QuoteItem, 'id' | 'quo
     notes: quote.notes || null
   };
 
-  console.log('Insertando cotización:', quoteData);
-
   const { data: quoteData_result, error: quoteError } = await supabase
     .from('quotes')
     .insert(quoteData)
     .select()
     .single();
   
-  if (quoteError) {
-    console.error('Error al insertar cotización:', quoteError);
-    throw quoteError;
-  }
+  if (quoteError) throw quoteError;
 
   if (items.length > 0) {
     const itemsWithQuoteId = items.map(item => ({
@@ -94,35 +87,40 @@ export async function createQuote(quote: any, items: Omit<QuoteItem, 'id' | 'quo
       total: (item.quantity * item.unit_price) * (1 - (item.discount || 0) / 100) * (1 + (item.tax_rate || 19) / 100)
     }));
 
-    console.log('Insertando items:', itemsWithQuoteId);
-
     const { error: itemsError } = await supabase
       .from('quote_items')
       .insert(itemsWithQuoteId);
     
-    if (itemsError) {
-      console.error('Error al insertar items:', itemsError);
-      throw itemsError;
-    }
+    if (itemsError) throw itemsError;
   }
+
+  await audit.log(
+    'quotes',
+    String(quoteData_result.id),
+    quoteData_result,
+    `Cotización creada: ${quoteData_result.quote_number}`
+  );
 
   return quoteData_result;
 }
 
 export async function updateQuote(id: number, quote: any) {
-  // Mapear campos camelCase a snake_case
+  const { data: oldData, error: fetchError } = await supabase
+    .from('quotes')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (fetchError) throw fetchError;
+
+  // CORRECCIÓN: Preservar valores anteriores si no se envían nuevos
   const quoteData: any = {
-    quote_number: quote.quote_number,
-    customer_id: quote.customer_id,
-    opportunity_id: quote.opportunity_id || null,
-    status: quote.status,
-    subtotal: quote.subtotal || 0,
-    tax_amount: quote.tax_amount || 0,
-    discount_amount: quote.discount_amount || 0,
-    total: quote.total || 0,
-    valid_until: quote.valid_until,
-    terms: quote.terms || null,
-    notes: quote.notes || null
+    ...oldData,
+    ...quote,
+    subtotal: quote.subtotal !== undefined ? quote.subtotal : oldData.subtotal,
+    tax_amount: quote.tax_amount !== undefined ? quote.tax_amount : oldData.tax_amount,
+    discount_amount: quote.discount_amount !== undefined ? quote.discount_amount : oldData.discount_amount,
+    total: quote.total !== undefined ? quote.total : oldData.total,
   };
 
   const { data, error } = await supabase
@@ -133,15 +131,37 @@ export async function updateQuote(id: number, quote: any) {
     .single();
   
   if (error) throw error;
+
+  await audit.log(
+    'quotes',
+    String(id),
+    oldData,
+    data,
+    `Cotización actualizada: ${data.quote_number}`
+  );
+
   return data;
 }
 
 export async function deleteQuote(id: number) {
+  const { data: oldData } = await supabase
+    .from('quotes')
+    .select('*')
+    .eq('id', id)
+    .single();
+
   const { error } = await supabase.from('quote_items').delete().eq('quote_id', id);
   if (error) throw error;
 
   const { error: quoteError } = await supabase.from('quotes').delete().eq('id', id);
   if (quoteError) throw quoteError;
+
+  await audit.delete(
+    'quotes',
+    String(id),
+    oldData,
+    `Cotización eliminada: ${oldData?.quote_number || 'Desconocida'}`
+  );
   
   return true;
 }
@@ -162,3 +182,8 @@ export async function getNextQuoteNumber() {
   
   return 'COT-001';
 }
+
+
+
+
+

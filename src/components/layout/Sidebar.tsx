@@ -1,11 +1,14 @@
-﻿import { useState } from 'react';
+﻿import { Calculator } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/services/supabase/client';
 import {
   LayoutDashboard, Users, Phone, ShoppingCart, Wrench, Package, DollarSign,
   Globe, BarChart, Settings, LogOut, Shield, ChevronLeft, ChevronRight,
   ChevronDown, ChevronUp, UserCircle, Target, FileText, ClipboardList,
-  ArrowDownUp, Truck, CreditCard, TrendingUp, Receipt, PieChart,
+  ArrowDownUp, Truck, CreditCard, TrendingUp, Receipt, Activity, Upload, Table,
+  ArrowRightLeft, BarChart3
 } from 'lucide-react';
 import './Sidebar.css';
 
@@ -13,58 +16,104 @@ const ICONS: Record<string, React.ElementType> = {
   LayoutDashboard, Users, Phone, ShoppingCart, Wrench, Package, DollarSign, Globe, BarChart, Settings,
 };
 
-const MENU_ITEMS = [
-  { key: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard', path: '/' },
-  { key: 'crm', label: 'CRM', icon: 'Users', path: '/crm',
-    children: [
-      { key: 'customers', label: 'Clientes', path: '/crm' },
-      { key: 'opportunities', label: 'Oportunidades', path: '/crm/opportunities' },
-    ],
-  },
-  { key: 'sales', label: 'Ventas', icon: 'ShoppingCart', path: '/sales',
-    children: [
-      { key: 'quotes', label: 'Cotizaciones', path: '/sales' },
-    ],
-  },
-  { key: 'operations', label: 'Operaciones', icon: 'Wrench', path: '/operations',
-    children: [
-      { key: 'work_orders', label: 'Órdenes de Trabajo', path: '/operations' },
-    ],
-  },
-  { key: 'inventory', label: 'Inventario', icon: 'Package', path: '/inventory',
-    children: [
-      { key: 'products', label: 'Productos', path: '/inventory' },
-      { key: 'movements', label: 'Movimientos', path: '/inventory/movements' },
-      { key: 'suppliers', label: 'Proveedores', path: '/inventory/suppliers' },
-    ],
-  },
-  { key: 'finance', label: 'Finanzas', icon: 'DollarSign', path: '/finance',
-    children: [
-      { key: 'dashboard', label: 'Dashboard', path: '/finance' },
-      { key: 'receivables', label: 'Por Cobrar', path: '/finance/receivables' },
-      { key: 'payables', label: 'Por Pagar', path: '/finance/payables' },
-      { key: 'transactions', label: 'Transacciones', path: '/finance/transactions' },
-    ],
-  },
-  { key: 'reports', label: 'Informes', icon: 'BarChart', path: '/reports',
-    children: [
-      { key: 'dashboard', label: 'Dashboard', path: '/reports' },
-      { key: 'sales', label: 'Ventas', path: '/reports/sales' },
-      { key: 'financial', label: 'Financiero', path: '/reports/financial' },
-      { key: 'inventory', label: 'Inventario', path: '/reports/inventory' },
-      { key: 'operations', label: 'Operaciones', path: '/reports/operations' },
-    ],
-  },
-  { key: 'call_center', label: 'Call Center', icon: 'Phone', path: '/call-center' },
-  { key: 'cms', label: 'CMS', icon: 'Globe', path: '/cms' },
-  { key: 'admin', label: 'Administración', icon: 'Settings', path: '/admin' },
-];
-
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
-  const [expandedMenus, setExpandedMenus] = useState(['crm', 'sales', 'operations', 'inventory', 'finance', 'reports']);
+  const [expandedMenus, setExpandedMenus] = useState(['crm', 'sales']);
   const { signOut, profile } = useAuth();
   const location = useLocation();
+  const [userRole, setUserRole] = useState<string>('admin');
+
+  useEffect(() => {
+    loadUserRole();
+  }, [profile]);
+
+  async function loadUserRole() {
+    if (!profile?.id) return;
+
+    const { data: roleData } = await (supabase.from('user_roles') as any)
+      .select('roles(name)')
+      .eq('user_id', profile.id)
+      .maybeSingle();
+
+    const roleName = roleData?.roles?.name?.toLowerCase().trim() || '';
+    if (roleName === 'salesperson' || roleName === 'vendedor') {
+      setUserRole('salesperson');
+    } else {
+      setUserRole('admin');
+    }
+  }
+
+  // Menús según el rol
+  const MENU_ITEMS = userRole === 'salesperson' 
+    ? [
+        { key: 'dashboard', label: 'Mi Dashboard', icon: 'LayoutDashboard', path: '/' },
+        { key: 'crm', label: 'Mis Clientes', icon: 'Users', path: '/crm',
+          children: [
+            { key: 'customers', label: 'Clientes Asignados', path: '/crm' },
+            { key: 'opportunities', label: 'Mis Oportunidades', path: '/crm/opportunities' },
+          ],
+        },
+        { key: 'sales', label: 'Mis Ventas', icon: 'ShoppingCart', path: '/sales',
+          children: [
+            { key: 'quotes', label: 'Mis Cotizaciones', path: '/sales' },
+          ],
+        },
+      ]
+    : [
+        { key: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard', path: '/' },
+        { key: 'crm', label: 'CRM', icon: 'Users', path: '/crm',
+          children: [
+            { key: 'customers', label: 'Clientes', path: '/crm' },
+            { key: 'opportunities', label: 'Oportunidades', path: '/crm/opportunities' },
+            { key: 'spreadsheet', label: 'Hoja de Cálculo', path: '/crm/spreadsheet' },
+          ],
+        },
+        { key: 'sales', label: 'Ventas', icon: 'ShoppingCart', path: '/sales',
+          children: [
+            { key: 'quotes', label: 'Cotizaciones', path: '/sales' },
+    { key: 'calculator', label: 'Calculadora CCTV', icon: 'Calculator', path: '/calculator' },
+          ],
+        },
+        { key: 'operations', label: 'Operaciones', icon: 'Wrench', path: '/operations',
+          children: [
+            { key: 'work_orders', label: 'Órdenes de Trabajo', path: '/operations' },
+          ],
+        },
+        { key: 'inventory', label: 'Inventario', icon: 'Package', path: '/inventory',
+          children: [
+            { key: 'products', label: 'Productos', path: '/inventory' },
+            { key: 'movements', label: 'Movimientos', path: '/inventory/movements' },
+            { key: 'suppliers', label: 'Proveedores', path: '/inventory/suppliers' },
+          ],
+        },
+        { key: 'finance', label: 'Finanzas', icon: 'DollarSign', path: '/finance',
+          children: [
+            { key: 'dashboard', label: 'Dashboard', path: '/finance' },
+            { key: 'receivables', label: 'Por Cobrar', path: '/finance/receivables' },
+            { key: 'payables', label: 'Por Pagar', path: '/finance/payables' },
+            { key: 'transactions', label: 'Transacciones', path: '/finance/transactions' },
+          ],
+        },
+        { key: 'reports', label: 'Informes', icon: 'BarChart', path: '/reports',
+          children: [
+            { key: 'dashboard', label: 'Dashboard', path: '/reports' },
+            { key: 'sales', label: 'Ventas', path: '/reports/sales' },
+            { key: 'financial', label: 'Financiero', path: '/reports/financial' },
+            { key: 'inventory', label: 'Inventario', path: '/reports/inventory' },
+            { key: 'operations', label: 'Operaciones', path: '/reports/operations' },
+          ],
+        },
+        { key: 'admin', label: 'Administración', icon: 'Settings', path: '/admin',
+          children: [
+            { key: 'users', label: 'Usuarios', path: '/admin' },
+            { key: 'roles', label: 'Roles', path: '/admin/roles' },
+            { key: 'audit', label: 'Auditoría', path: '/admin/audit' },
+            { key: 'import', label: 'Importación Masiva', path: '/admin/import' },
+            { key: 'distribution', label: 'Config. Distribución', path: '/admin/distribution' },
+            { key: 'assignments', label: 'Asignaciones', path: '/admin/assignments' },
+          ],
+        },
+      ];
 
   const toggleMenu = (key) => {
     setExpandedMenus((prev) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]);
@@ -110,6 +159,7 @@ export function Sidebar() {
                         <NavLink key={child.key} to={child.path} className={({ isActive: isActiveLink }) => `submenu-item ${isActiveLink ? 'active' : ''}`}>
                           {child.key === 'customers' && <UserCircle size={16} />}
                           {child.key === 'opportunities' && <Target size={16} />}
+                          {child.key === 'spreadsheet' && <Table size={16} />}
                           {child.key === 'quotes' && <FileText size={16} />}
                           {child.key === 'work_orders' && <ClipboardList size={16} />}
                           {child.key === 'products' && <Package size={16} />}
@@ -123,6 +173,12 @@ export function Sidebar() {
                           {child.key === 'financial' && <DollarSign size={16} />}
                           {child.key === 'inventory' && <Package size={16} />}
                           {child.key === 'operations' && <Wrench size={16} />}
+                          {child.key === 'users' && <Users size={16} />}
+                          {child.key === 'roles' && <Shield size={16} />}
+                          {child.key === 'audit' && <Activity size={16} />}
+                          {child.key === 'import' && <Upload size={16} />}
+                          {child.key === 'distribution' && <BarChart3 size={16} />}
+                          {child.key === 'assignments' && <ArrowRightLeft size={16} />}
                           <span className="submenu-label">{child.label}</span>
                         </NavLink>
                       ))}
@@ -147,6 +203,7 @@ export function Sidebar() {
             <div className="user-details">
               <div className="user-name">{profile.full_name || 'Usuario'}</div>
               <div className="user-email">{profile.email}</div>
+              {userRole === 'salesperson' && <div className="small text-warning">Vendedor</div>}
             </div>
           </div>
         )}
@@ -158,3 +215,5 @@ export function Sidebar() {
     </aside>
   );
 }
+
+

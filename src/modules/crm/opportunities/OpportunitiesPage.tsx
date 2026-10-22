@@ -1,17 +1,20 @@
 ﻿import { useState, useEffect } from 'react';
 import { Card, Row, Col, Badge, Button, Spinner, Alert } from 'react-bootstrap';
 import { getOpportunities } from '@/services/api/opportunities';
-import { Plus, TrendingUp, DollarSign, Calendar, Edit2 } from 'lucide-react';
+import { Plus, TrendingUp, DollarSign, Calendar, Edit2, FileText } from 'lucide-react';
 import { OpportunityForm } from './OpportunityForm';
+import { QuoteForm } from '@/modules/sales/quotes/QuoteForm';
+import { supabase } from '@/services/supabase/client';
 
 const STAGES = [
-  { key: 'new', label: 'Prospecto Nuevo', color: 'secondary' },
-  { key: 'contacted', label: 'Contactado', color: 'info' },
-  { key: 'interested', label: 'Interesado', color: 'primary' },
-  { key: 'quote_sent', label: 'Cotización Enviada', color: 'warning' },
-  { key: 'negotiation', label: 'Negociación', color: 'purple' },
-  { key: 'won', label: 'Ganado', color: 'success' },
-  { key: 'lost', label: 'Perdido', color: 'danger' },
+  { key: 'asignado', label: '1. Asignado', color: 'secondary' },
+  { key: 'contacto', label: '2. En Contacto', color: 'info' },
+  { key: 'oportunidad', label: '3. Oportunidad', color: 'primary' },
+  { key: 'visita', label: '4. Visita Técnica', color: 'warning' },
+  { key: 'propuesta', label: '5. Cotización Enviada', color: 'orange' },
+  { key: 'negociacion', label: 'Negociación', color: 'purple' },
+  { key: 'ganado', label: '✅ Ganado', color: 'success' },
+  { key: 'perdido', label: '❌ Perdido', color: 'danger' },
 ];
 
 export function OpportunitiesPage() {
@@ -20,13 +23,21 @@ export function OpportunitiesPage() {
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingOpp, setEditingOpp] = useState<any | null>(null);
+  const [showQuoteForm, setShowQuoteForm] = useState(false);
+  const [preselectedOppForQuote, setPreselectedOppForQuote] = useState<any | null>(null);
 
   useEffect(() => { loadOpportunities(); }, []);
 
   async function loadOpportunities() {
     try {
       setLoading(true);
-      const data = await getOpportunities();
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: roleData } = await (supabase.from('user_roles') as any).select('roles(name)').eq('user_id', user?.id).maybeSingle();
+      const roleName = roleData?.roles?.name?.toLowerCase().trim() || '';
+      const isSalesperson = roleName === 'salesperson' || roleName === 'vendedor';
+      const sellerId = isSalesperson ? user?.id : undefined;
+
+      const data = await getOpportunities(sellerId);
       setOpportunities(data || []);
     } catch (err: any) {
       setError('Error al cargar: ' + err.message);
@@ -36,6 +47,8 @@ export function OpportunitiesPage() {
   }
 
   const totalValue = opportunities.reduce((sum, opp) => sum + (opp.value || 0), 0);
+  const wonCount = opportunities.filter(o => o.stage === 'ganado').length;
+  const activeCount = opportunities.filter(o => !['ganado', 'perdido'].includes(o.stage)).length;
 
   if (loading) return <div className="d-flex justify-content-center align-items-center" style={{ height: '300px' }}><Spinner animation="border" variant="primary" /><span className="ms-2">Cargando...</span></div>;
 
@@ -50,9 +63,9 @@ export function OpportunitiesPage() {
           <Plus size={18} className="me-2" /> Nueva Oportunidad
         </Button>
       </div>
-      
+
       <Row className="g-3 mb-4">
-        <Col md={4}>
+        <Col md={3}>
           <Card className="border-0 shadow-sm">
             <Card.Body>
               <div className="d-flex align-items-center">
@@ -65,27 +78,40 @@ export function OpportunitiesPage() {
             </Card.Body>
           </Card>
         </Col>
-        <Col md={4}>
+        <Col md={3}>
           <Card className="border-0 shadow-sm">
             <Card.Body>
               <div className="d-flex align-items-center">
                 <div className="bg-success bg-opacity-10 p-3 rounded me-3"><DollarSign size={24} className="text-success" /></div>
                 <div>
                   <div className="text-muted small">Valor Total Pipeline</div>
-                  <div className="fs-4 fw-bold">$ {totalValue.toLocaleString('es-CO')}</div>
+                  <div className="fs-4 fw-bold">${totalValue.toLocaleString('es-CO')}</div>
                 </div>
               </div>
             </Card.Body>
           </Card>
         </Col>
-        <Col md={4}>
+        <Col md={3}>
+          <Card className="border-0 shadow-sm">
+            <Card.Body>
+              <div className="d-flex align-items-center">
+                <div className="bg-info bg-opacity-10 p-3 rounded me-3"><TrendingUp size={24} className="text-info" /></div>
+                <div>
+                  <div className="text-muted small">Oportunidades Activas</div>
+                  <div className="fs-4 fw-bold">{activeCount}</div>
+                </div>
+              </div>
+            </Card.Body>
+          </Card>
+        </Col>
+        <Col md={3}>
           <Card className="border-0 shadow-sm">
             <Card.Body>
               <div className="d-flex align-items-center">
                 <div className="bg-warning bg-opacity-10 p-3 rounded me-3"><Calendar size={24} className="text-warning" /></div>
                 <div>
-                  <div className="text-muted small">Por Cerrar Este Mes</div>
-                  <div className="fs-4 fw-bold">0</div>
+                  <div className="text-muted small">Ganadas</div>
+                  <div className="fs-4 fw-bold">{wonCount}</div>
                 </div>
               </div>
             </Card.Body>
@@ -120,12 +146,17 @@ export function OpportunitiesPage() {
                         <td className="ps-4 fw-semibold">{opp.title}</td>
                         <td>{opp.customers?.full_name || 'N/A'}</td>
                         <td><Badge bg={stage?.color || 'secondary'}>{stage?.label || opp.stage}</Badge></td>
-                        <td>$ {(opp.value || 0).toLocaleString('es-CO')}</td>
+                        <td>${(opp.value || 0).toLocaleString('es-CO')}</td>
                         <td>{opp.probability || 0}%</td>
                         <td className="text-end pe-4">
-                          <Button variant="outline-primary" size="sm" onClick={() => { setEditingOpp(opp); setShowForm(true); }}>
+                          <Button variant="outline-primary" size="sm" className="me-2" onClick={() => { setEditingOpp(opp); setShowForm(true); }} title="Editar Oportunidad">
                             <Edit2 size={16} />
                           </Button>
+                          {opp.stage !== 'perdido' && (
+                            <Button variant="outline-success" size="sm" onClick={() => { setPreselectedOppForQuote(opp); setShowQuoteForm(true); }} title="Crear Cotización">
+                              <FileText size={16} />
+                            </Button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -137,11 +168,18 @@ export function OpportunitiesPage() {
         </Card.Body>
       </Card>
 
-      <OpportunityForm 
-        show={showForm} 
-        onHide={() => setShowForm(false)} 
-        opportunity={editingOpp} 
-        onSuccess={loadOpportunities} 
+      <OpportunityForm
+        show={showForm}
+        onHide={() => setShowForm(false)}
+        opportunity={editingOpp}
+        onSuccess={loadOpportunities}
+      />
+      
+      <QuoteForm
+        show={showQuoteForm}
+        onHide={() => setShowQuoteForm(false)}
+        preselectedOpportunity={preselectedOppForQuote}
+        onSuccess={() => { setShowQuoteForm(false); loadOpportunities(); }}
       />
     </div>
   );

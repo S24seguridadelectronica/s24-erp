@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { createCustomer, updateCustomer, type Customer } from '@/services/api/customers';
+import { supabase } from '@/services/supabase/client';
 
 const schema = z.object({
   customer_type: z.enum(['individual', 'company']),
@@ -12,6 +13,7 @@ const schema = z.object({
   company_name: z.string().optional(),
   email: z.string().email('Correo inválido').optional().or(z.literal('')),
   phone: z.string().min(7, 'Teléfono es requerido'),
+  whatsapp_phone: z.string().optional(),
   city: z.string().min(2, 'Ciudad es requerida'),
   address: z.string().optional(),
   contact_person: z.string().optional(),
@@ -43,14 +45,34 @@ export function CustomerForm({ show, onHide, customer, onSuccess }: CustomerForm
   }, [customer, show, reset]);
 
   const onSubmit = async (data: FormData) => {
+    // 🔥 PRUEBA DE FUEGO: Si ves esta alerta, el código nuevo está funcionando.
+    alert("✅ ¡ESTE ES EL CÓDIGO NUEVO! El assigned_to se va a guardar.");
+    
     setLoading(true);
     setError(null);
     try {
-      if (customer?.id) await updateCustomer(customer.id, data);
-      else await createCustomer(data);
+      // 1. Obtener el usuario actual que está creando el cliente
+      const { data: { user } } = await supabase.auth.getUser();
+      console.log('🔍 USUARIO ACTUAL ID:', user?.id);
+      
+      if (customer?.id) {
+        // Si es edición, actualizamos manteniendo el assigned_to original
+        await updateCustomer(customer.id, data);
+      } else {
+        // Si es creación nueva, asignamos el cliente al usuario actual
+        const newCustomerData = {
+          ...data,
+          assigned_to: user?.id ? String(user.id) : null
+        } as any; // <-- FIX: Resuelve el error de TypeScript
+        
+        console.log('🚀 ENVIANDO A BD CON assigned_to:', newCustomerData.assigned_to);
+        await createCustomer(newCustomerData);
+      }
+      
       onSuccess();
       onHide();
     } catch (err: any) {
+      console.error('💥 ERROR AL GUARDAR:', err);
       setError(err.message || 'Error al guardar el cliente');
     } finally {
       setLoading(false);
@@ -60,57 +82,78 @@ export function CustomerForm({ show, onHide, customer, onSuccess }: CustomerForm
   return (
     <Modal show={show} onHide={onHide} size="lg" centered>
       <Form onSubmit={handleSubmit(onSubmit)}>
-        <Modal.Header closeButton><Modal.Title>{customer ? 'Editar Cliente' : 'Nuevo Cliente'}</Modal.Title></Modal.Header>
+        <Modal.Header closeButton>
+          <Modal.Title>{customer ? 'Editar Cliente' : 'Nuevo Cliente'}</Modal.Title>
+        </Modal.Header>
         <Modal.Body>
           {error && <Alert variant="danger">{error}</Alert>}
           <Row className="g-3">
             <Col md={6}>
-              <Form.Group><Form.Label>Tipo de Cliente *</Form.Label>
-                <Form.Select {...register('customer_type')}><option value="individual">Persona Natural</option><option value="company">Empresa</option></Form.Select>
+              <Form.Group>
+                <Form.Label>Tipo de Cliente *</Form.Label>
+                <Form.Select {...register('customer_type')}>
+                  <option value="individual">Persona Natural</option>
+                  <option value="company">Empresa</option>
+                </Form.Select>
               </Form.Group>
             </Col>
             <Col md={6}>
-              <Form.Group><Form.Label>Nombre Completo / Razón Social *</Form.Label>
+              <Form.Group>
+                <Form.Label>Nombre Completo / Razón Social *</Form.Label>
                 <Form.Control isInvalid={!!errors.full_name} {...register('full_name')} />
                 <Form.Control.Feedback type="invalid">{errors.full_name?.message}</Form.Control.Feedback>
               </Form.Group>
             </Col>
             <Col md={6}>
-              <Form.Group><Form.Label>Documento / NIT *</Form.Label>
+              <Form.Group>
+                <Form.Label>Documento / NIT *</Form.Label>
                 <Form.Control isInvalid={!!errors.document_number} {...register('document_number')} />
                 <Form.Control.Feedback type="invalid">{errors.document_number?.message}</Form.Control.Feedback>
               </Form.Group>
             </Col>
             <Col md={6}>
-              <Form.Group><Form.Label>Nombre de la Empresa (si aplica)</Form.Label>
+              <Form.Group>
+                <Form.Label>Nombre de la Empresa (si aplica)</Form.Label>
                 <Form.Control {...register('company_name')} />
               </Form.Group>
             </Col>
             <Col md={6}>
-              <Form.Group><Form.Label>Teléfono *</Form.Label>
-                <Form.Control isInvalid={!!errors.phone} {...register('phone')} />
+              <Form.Group>
+                <Form.Label>Teléfono *</Form.Label>
+                <Form.Control isInvalid={!!errors.phone} {...register('phone')} placeholder="Teléfono principal" />
                 <Form.Control.Feedback type="invalid">{errors.phone?.message}</Form.Control.Feedback>
               </Form.Group>
             </Col>
             <Col md={6}>
-              <Form.Group><Form.Label>Correo Electrónico</Form.Label>
+              <Form.Group>
+                <Form.Label>WhatsApp (si es diferente)</Form.Label>
+                <Form.Control {...register('whatsapp_phone')} placeholder="Número de WhatsApp" />
+                <Form.Text className="text-muted">Si está vacío, se usará el teléfono principal para WhatsApp</Form.Text>
+              </Form.Group>
+            </Col>
+            <Col md={6}>
+              <Form.Group>
+                <Form.Label>Correo Electrónico</Form.Label>
                 <Form.Control type="email" isInvalid={!!errors.email} {...register('email')} />
                 <Form.Control.Feedback type="invalid">{errors.email?.message}</Form.Control.Feedback>
               </Form.Group>
             </Col>
             <Col md={6}>
-              <Form.Group><Form.Label>Ciudad *</Form.Label>
+              <Form.Group>
+                <Form.Label>Ciudad *</Form.Label>
                 <Form.Control isInvalid={!!errors.city} {...register('city')} />
                 <Form.Control.Feedback type="invalid">{errors.city?.message}</Form.Control.Feedback>
               </Form.Group>
             </Col>
-            <Col md={6}>
-              <Form.Group><Form.Label>Dirección</Form.Label>
+            <Col md={12}>
+              <Form.Group>
+                <Form.Label>Dirección</Form.Label>
                 <Form.Control {...register('address')} />
               </Form.Group>
             </Col>
             <Col md={12}>
-              <Form.Group><Form.Label>Notas / Observaciones</Form.Label>
+              <Form.Group>
+                <Form.Label>Notas / Observaciones</Form.Label>
                 <Form.Control as="textarea" rows={3} {...register('notes')} />
               </Form.Group>
             </Col>

@@ -1,4 +1,5 @@
 ﻿import { supabase } from '../supabase/client';
+import { audit } from './audit';
 
 export interface WorkOrderMaterial {
   id?: number;
@@ -38,7 +39,6 @@ export async function getWorkOrders() {
     .from('work_orders')
     .select('*, customers(full_name, company_name, phone), profiles!work_orders_assigned_to_fkey(full_name)')
     .order('created_at', { ascending: false });
-  
   if (error) throw error;
   return data as any[];
 }
@@ -49,7 +49,6 @@ export async function getWorkOrderById(id: number) {
     .select('*, items(*), customers(full_name, company_name, email, phone, address, city)')
     .eq('id', id)
     .single();
-  
   if (error) throw error;
   return data as any;
 }
@@ -74,18 +73,13 @@ export async function createWorkOrder(order: any, items: Omit<WorkOrderMaterial,
     notes: order.notes || null
   };
 
-  console.log('Insertando orden de trabajo:', orderData);
-
   const { data: orderResult, error: orderError } = await supabase
     .from('work_orders')
     .insert(orderData)
     .select()
     .single();
   
-  if (orderError) {
-    console.error('Error al insertar orden:', orderError);
-    throw orderError;
-  }
+  if (orderError) throw orderError;
 
   if (items.length > 0) {
     const itemsWithOrderId = items.map(item => ({
@@ -100,16 +94,26 @@ export async function createWorkOrder(order: any, items: Omit<WorkOrderMaterial,
       .from('work_order_materials')
       .insert(itemsWithOrderId);
     
-    if (itemsError) {
-      console.error('Error al insertar materiales:', itemsError);
-      throw itemsError;
-    }
+    if (itemsError) throw itemsError;
   }
+
+  await audit.create(
+    'work_orders',
+    String(orderResult.id),
+    orderResult,
+    `Orden de trabajo creada: ${orderResult.order_number}`
+  );
 
   return orderResult;
 }
 
 export async function updateWorkOrder(id: number, order: any) {
+  const { data: oldData } = await supabase
+    .from('work_orders')
+    .select('*')
+    .eq('id', id)
+    .single();
+
   const orderData: any = {
     order_number: order.order_number,
     customer_id: order.customer_id,
@@ -138,15 +142,37 @@ export async function updateWorkOrder(id: number, order: any) {
     .single();
   
   if (error) throw error;
+
+  await audit.update(
+    'work_orders',
+    String(id),
+    oldData,
+    data,
+    `Orden de trabajo actualizada: ${data.order_number}`
+  );
+
   return data;
 }
 
 export async function deleteWorkOrder(id: number) {
+  const { data: oldData } = await supabase
+    .from('work_orders')
+    .select('*')
+    .eq('id', id)
+    .single();
+
   const { error } = await supabase.from('work_order_materials').delete().eq('work_order_id', id);
   if (error) throw error;
 
   const { error: orderError } = await supabase.from('work_orders').delete().eq('id', id);
   if (orderError) throw orderError;
+
+  await audit.delete(
+    'work_orders',
+    String(id),
+    oldData,
+    `Orden de trabajo eliminada: ${oldData?.order_number || 'Desconocida'}`
+  );
   
   return true;
 }
@@ -173,7 +199,6 @@ export async function getTechnicians() {
     .from('profiles')
     .select('id, full_name, email')
     .order('full_name');
-  
   if (error) throw error;
   return data || [];
 }

@@ -1,14 +1,16 @@
-import { useState, useEffect } from 'react';
-import { Card, Table, Button, Badge, Spinner, Alert } from 'react-bootstrap';
-import { getUsers } from '@/services/api/users';
-import { useAuth } from '@/hooks/useAuth';
-import { UserPlus, Shield, AlertCircle } from 'lucide-react';
+﻿import { useState, useEffect } from 'react';
+import { Card, Table, Button, Badge, Spinner, Alert, Form, InputGroup } from 'react-bootstrap';
+import { getUsers, deleteUser } from '@/services/api/users';
+import { UserPlus, Search, Edit2, Trash2 } from 'lucide-react';
+import { UserForm } from './UserForm';
 
 export function UsersPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { profile } = useAuth();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [editingUser, setEditingUser] = useState<any | null>(null);
 
   useEffect(() => { loadUsers(); }, []);
 
@@ -24,28 +26,46 @@ export function UsersPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="d-flex justify-content-center align-items-center" style={{ height: '300px' }}>
-        <Spinner animation="border" variant="primary" />
-        <span className="ms-2">Cargando usuarios...</span>
-      </div>
-    );
-  }
+  const handleDelete = async (id: number) => {
+    if (window.confirm('¿Estás seguro de eliminar este usuario?')) {
+      try {
+        await deleteUser(id);
+        loadUsers();
+      } catch (err: any) {
+        alert('Error al eliminar: ' + err.message);
+      }
+    }
+  };
+
+  const filteredUsers = users.filter(user =>
+    user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    user.email.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  if (loading) return <div className="d-flex justify-content-center align-items-center" style={{ height: '300px' }}><Spinner animation="border" variant="primary" /><span className="ms-2">Cargando...</span></div>;
 
   return (
     <div className="fade-in">
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div>
-          <h2 className="mb-1">Gestión de Usuarios</h2>
-          <p className="text-muted mb-0">Administra los accesos y roles del personal de S24</p>
+          <h2 className="mb-1">Usuarios</h2>
+          <p className="text-muted mb-0">Gestiona los usuarios del sistema S24</p>
         </div>
-        <Button variant="primary">
+        <Button variant="primary" onClick={() => { setEditingUser(null); setShowForm(true); }}>
           <UserPlus size={18} className="me-2" /> Nuevo Usuario
         </Button>
       </div>
 
-      {error && <Alert variant="danger"><AlertCircle size={18} className="me-2" />{error}</Alert>}
+      {error && <Alert variant="danger">{error}</Alert>}
+
+      <Card className="border-0 shadow-sm mb-4">
+        <Card.Body>
+          <InputGroup>
+            <InputGroup.Text><Search size={18} /></InputGroup.Text>
+            <Form.Control placeholder="Buscar por nombre o correo..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+          </InputGroup>
+        </Card.Body>
+      </Card>
 
       <Card className="border-0 shadow-sm">
         <Card.Body className="p-0">
@@ -53,41 +73,38 @@ export function UsersPage() {
             <thead className="bg-light">
               <tr>
                 <th className="ps-4">Usuario</th>
-                <th>Correo Electrónico</th>
+                <th>Correo</th>
                 <th>Teléfono</th>
+                <th>Rol</th>
                 <th>Estado</th>
-                <th>Fecha de Registro</th>
                 <th className="text-end pe-4">Acciones</th>
               </tr>
             </thead>
             <tbody>
-              {users.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-5 text-muted">No se encontraron usuarios registrados.</td></tr>
+              {filteredUsers.length === 0 ? (
+                <tr><td colSpan={6} className="text-center py-5 text-muted">No hay usuarios registrados.</td></tr>
               ) : (
-                users.map((user) => (
+                filteredUsers.map((user) => (
                   <tr key={user.id}>
                     <td className="ps-4">
                       <div className="d-flex align-items-center">
-                        <div className="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-3" style={{ width: '40px', height: '40px', fontSize: '16px', fontWeight: 'bold' }}>
-                          {user.full_name ? user.full_name.charAt(0).toUpperCase() : 'U'}
+                        <div className="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-3" style={{ width: '40px', height: '40px', fontWeight: 'bold' }}>
+                          {user.full_name.charAt(0).toUpperCase()}
                         </div>
-                        <div>
-                          <div className="fw-semibold">{user.full_name || 'Sin nombre'}</div>
-                          <small className="text-muted">{user.id === profile?.id ? '(Tú)' : ''}</small>
-                        </div>
+                        <div className="fw-semibold">{user.full_name}</div>
                       </div>
                     </td>
                     <td>{user.email}</td>
                     <td>{user.phone || '-'}</td>
-                    <td>
-                      <Badge bg={user.is_active ? 'success' : 'secondary'} className="px-3 py-2">
-                        {user.is_active ? 'Activo' : 'Inactivo'}
-                      </Badge>
-                    </td>
-                    <td>{new Date(user.created_at).toLocaleDateString('es-CO')}</td>
+                    <td><Badge bg="info">{user.roles?.name || 'Sin rol'}</Badge></td>
+                    <td><Badge bg={user.is_active ? 'success' : 'secondary'}>{user.is_active ? 'Activo' : 'Inactivo'}</Badge></td>
                     <td className="text-end pe-4">
-                      <Button variant="outline-secondary" size="sm" className="me-2"><Shield size={16} className="me-1" /> Roles</Button>
-                      <Button variant="outline-primary" size="sm">Editar</Button>
+                      <Button variant="outline-primary" size="sm" className="me-2" onClick={() => { setEditingUser(user); setShowForm(true); }}>
+                        <Edit2 size={16} />
+                      </Button>
+                      <Button variant="outline-danger" size="sm" onClick={() => handleDelete(user.id)}>
+                        <Trash2 size={16} />
+                      </Button>
                     </td>
                   </tr>
                 ))
@@ -96,6 +113,8 @@ export function UsersPage() {
           </Table>
         </Card.Body>
       </Card>
+
+      <UserForm show={showForm} onHide={() => setShowForm(false)} user={editingUser} onSuccess={loadUsers} />
     </div>
   );
 }
