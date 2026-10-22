@@ -42,13 +42,31 @@ jobs:
       - name: Setup Capacitor config
         run: |
           rm -f capacitor.config.ts capacitor.config.json
-          echo '{"appId":"com.s24seguridad.erp","appName":"S24 ERP","webDir":"dist","server":{"androidScheme":"https"}}' > capacitor.config.json
+          cat > capacitor.config.json << 'EOF'
+          {
+            "appId": "com.s24seguridad.erp",
+            "appName": "S24 ERP",
+            "webDir": "dist",
+            "server": {
+              "androidScheme": "https",
+              "cleartext": true
+            }
+          }
+          EOF
 
       - name: Clean and add Android platform
         run: |
           rm -rf android
           npx cap add android
           npx cap sync android
+
+      - name: Fix Android Manifest
+        run: |
+          # Agregar permisos
+          sed -i '/<manifest>/a\    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />' android/app/src/main/AndroidManifest.xml
+          
+          # Agregar cleartext traffic
+          sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
