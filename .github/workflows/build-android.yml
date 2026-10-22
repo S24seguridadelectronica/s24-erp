@@ -35,13 +35,12 @@ jobs:
 
       - name: Setup Capacitor config
         run: |
-          # Eliminar config existente si hay
           rm -f capacitor.config.ts capacitor.config.json
-          # Crear config JSON limpio
           echo '{"appId":"com.s24seguridad.erp","appName":"S24 ERP","webDir":"dist"}' > capacitor.config.json
 
-      - name: Add Android platform
+      - name: Clean and add Android platform
         run: |
+          rm -rf android
           npx cap add android
           npx cap sync android
 
