@@ -29,13 +29,19 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Install Capacitor 6 (stable)
+      - name: Install Capacitor 6
         run: |
           npm install @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
 
-      - name: Initialize Capacitor
+      - name: Setup Capacitor config
         run: |
-          npx cap init "S24 ERP" "com.s24seguridad.erp" --web-dir=dist
+          # Eliminar config existente si hay
+          rm -f capacitor.config.ts capacitor.config.json
+          # Crear config JSON limpio
+          echo '{"appId":"com.s24seguridad.erp","appName":"S24 ERP","webDir":"dist"}' > capacitor.config.json
+
+      - name: Add Android platform
+        run: |
           npx cap add android
           npx cap sync android
 
@@ -54,4 +60,3 @@ jobs:
           name: S24-ERP-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 7
-
