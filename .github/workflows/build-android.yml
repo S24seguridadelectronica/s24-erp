@@ -62,10 +62,7 @@ jobs:
 
       - name: Fix Android Manifest
         run: |
-          # Agregar permisos
           sed -i '/<manifest>/a\    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />' android/app/src/main/AndroidManifest.xml
-          
-          # Agregar cleartext traffic
           sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
 
       - name: Setup Gradle
@@ -77,9 +74,21 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleDebug --no-daemon
 
+      - name: Verify APK exists
+        run: |
+          echo "Buscando APK..."
+          find android -name "*.apk" -type f
+          if [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
+            echo "✅ APK encontrado"
+          else
+            echo "❌ APK no encontrado en ruta esperada"
+            exit 1
+          fi
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: S24-ERP-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 7
+          if-no-files-found: error
