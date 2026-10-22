@@ -1,5 +1,5 @@
 ﻿import { CctvCalculator } from '@/modules/tools/CctvCalculator';
-import { createBrowserRouter, Navigate } from 'react-router-dom'
+import { createHashRouter, Navigate } from 'react-router-dom'
 import { MainLayout } from '@/components/layout/MainLayout'
 import { DashboardPage } from '@/modules/dashboard/DashboardPage'
 import { LoginPage } from '@/modules/auth/LoginPage'
@@ -28,7 +28,7 @@ import { FinancialReport } from '@/modules/reports/FinancialReport'
 import { InventoryReport } from '@/modules/reports/InventoryReport'
 import { OperationsReport } from '@/modules/reports/OperationsReport'
 
-export const router = createBrowserRouter([
+export const router = createHashRouter([
   { path: '/login', element: <LoginPage /> },
   {
     path: '/',
@@ -85,4 +85,5 @@ export const router = createBrowserRouter([
   },
   { path: '*', element: <Navigate to='/' replace /> },
 ])
+
 
