@@ -9,12 +9,15 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist"
+    "deploy": "gh-pages -d dist",
+    "build:capacitor": "vite build --mode capacitor && cap sync android",
+    "android:debug": "npm run build:capacitor && cd android && gradlew.bat assembleDebug",
+    "android:release": "npm run build:capacitor && cd android && gradlew.bat assembleRelease"
   },
   "dependencies": {
-    "@capacitor/android": "^8.5.3",
-    "@capacitor/cli": "^8.5.3",
-    "@capacitor/core": "^8.5.3",
+    "@capacitor/android": "^6.2.2",
+    "@capacitor/cli": "^6.2.2",
+    "@capacitor/core": "^6.2.2",
     "@emailjs/browser": "^5.0.3",
     "@hookform/resolvers": "^5.9.1",
     "@supabase/supabase-js": "^2.117.3",
