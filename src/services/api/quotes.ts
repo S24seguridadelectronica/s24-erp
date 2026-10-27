@@ -32,27 +32,29 @@ export interface Quote {
   updated_at?: string;
 }
 
+// Usamos (supabase as any) para evitar errores de tipos 'never' cuando el esquema de Supabase no está actualizado
+
 export async function getQuotes() {
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from('quotes')
     .select('*, customers(full_name, company_name), opportunities(title)')
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return data as any[];
+  return data || [];
 }
 
 export async function getQuoteById(id: number) {
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from('quotes')
     .select('*, items(*), customers(full_name, company_name, email, phone, address, city)')
     .eq('id', id)
     .single();
   if (error) throw error;
-  return data as any;
+  return data;
 }
 
-export async function createQuote(quote: any, items: Omit<QuoteItem, 'id' | 'quote_id'>[]) {
-  const quoteData = {
+export async function createQuote(quote: any, items: any[]) {
+  const quoteData: any = {
     quote_number: quote.quote_number,
     customer_id: quote.customer_id,
     opportunity_id: quote.opportunity_id || null,
@@ -67,16 +69,16 @@ export async function createQuote(quote: any, items: Omit<QuoteItem, 'id' | 'quo
     notes: quote.notes || null
   };
 
-  const { data: quoteData_result, error: quoteError } = await supabase
+  const { data: quoteData_result, error: quoteError } = await (supabase as any)
     .from('quotes')
-    .insert(quoteData)
+    .insert([quoteData])
     .select()
     .single();
   
-  if (quoteError) throw quoteError;
+  if (quoteError || !quoteData_result) throw quoteError || new Error("No se pudo crear la cotización");
 
-  if (items.length > 0) {
-    const itemsWithQuoteId = items.map(item => ({
+  if (items && items.length > 0) {
+    const itemsWithQuoteId: any[] = items.map((item: any) => ({
       quote_id: quoteData_result.id,
       item_type: item.item_type,
       description: item.description,
@@ -87,7 +89,7 @@ export async function createQuote(quote: any, items: Omit<QuoteItem, 'id' | 'quo
       total: (item.quantity * item.unit_price) * (1 - (item.discount || 0) / 100) * (1 + (item.tax_rate || 19) / 100)
     }));
 
-    const { error: itemsError } = await supabase
+    const { error: itemsError } = await (supabase as any)
       .from('quote_items')
       .insert(itemsWithQuoteId);
     
@@ -95,9 +97,9 @@ export async function createQuote(quote: any, items: Omit<QuoteItem, 'id' | 'quo
   }
 
   await audit.log(
+    'CREATE',
     'quotes',
     String(quoteData_result.id),
-    quoteData_result,
     `Cotización creada: ${quoteData_result.quote_number}`
   );
 
@@ -105,38 +107,68 @@ export async function createQuote(quote: any, items: Omit<QuoteItem, 'id' | 'quo
 }
 
 export async function updateQuote(id: number, quote: any) {
-  const { data: oldData, error: fetchError } = await supabase
+  const { data: oldData, error: fetchError } = await (supabase as any)
     .from('quotes')
     .select('*')
     .eq('id', id)
     .single();
 
-  if (fetchError) throw fetchError;
+  if (fetchError || !oldData) throw fetchError || new Error("No se encontró la cotización");
 
-  // CORRECCIÓN: Preservar valores anteriores si no se envían nuevos
-  const quoteData: any = {
+  const { items, ...quoteData } = quote;
+
+  const updatePayload: any = {
     ...oldData,
-    ...quote,
-    subtotal: quote.subtotal !== undefined ? quote.subtotal : oldData.subtotal,
-    tax_amount: quote.tax_amount !== undefined ? quote.tax_amount : oldData.tax_amount,
-    discount_amount: quote.discount_amount !== undefined ? quote.discount_amount : oldData.discount_amount,
-    total: quote.total !== undefined ? quote.total : oldData.total,
+    ...quoteData,
+    subtotal: quoteData.subtotal !== undefined ? quoteData.subtotal : oldData.subtotal,
+    tax_amount: quoteData.tax_amount !== undefined ? quoteData.tax_amount : oldData.tax_amount,
+    discount_amount: quoteData.discount_amount !== undefined ? quoteData.discount_amount : oldData.discount_amount,
+    total: quoteData.total !== undefined ? quoteData.total : oldData.total,
   };
 
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from('quotes')
-    .update(quoteData)
+    .update(updatePayload)
     .eq('id', id)
     .select()
     .single();
   
-  if (error) throw error;
+  if (error || !data) throw error || new Error("No se pudo actualizar la cotización");
+
+  if (items && Array.isArray(items)) {
+    // 1. Eliminar items existentes de esta cotización
+    const { error: deleteItemsError } = await (supabase as any)
+      .from('quote_items')
+      .delete()
+      .eq('quote_id', id);
+    
+    if (deleteItemsError) throw deleteItemsError;
+
+    // 2. Insertar los nuevos items
+    if (items.length > 0) {
+      const itemsWithQuoteId: any[] = items.map((item: any) => ({
+        quote_id: id,
+        item_type: item.item_type,
+        description: item.description,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        discount: item.discount || 0,
+        tax_rate: item.tax_rate || 19,
+        total: (item.quantity * item.unit_price) * (1 - (item.discount || 0) / 100) * (1 + (item.tax_rate || 19) / 100)
+      }));
+
+      const { error: insertItemsError } = await (supabase as any)
+        .from('quote_items')
+        .insert(itemsWithQuoteId);
+      
+      if (insertItemsError) throw insertItemsError;
+    }
+  }
 
   await audit.log(
+    'UPDATE',
     'quotes',
     String(id),
-    oldData,
-    data,
     `Cotización actualizada: ${data.quote_number}`
   );
 
@@ -144,22 +176,22 @@ export async function updateQuote(id: number, quote: any) {
 }
 
 export async function deleteQuote(id: number) {
-  const { data: oldData } = await supabase
+  const { data: oldData } = await (supabase as any)
     .from('quotes')
     .select('*')
     .eq('id', id)
     .single();
 
-  const { error } = await supabase.from('quote_items').delete().eq('quote_id', id);
+  const { error } = await (supabase as any).from('quote_items').delete().eq('quote_id', id);
   if (error) throw error;
 
-  const { error: quoteError } = await supabase.from('quotes').delete().eq('id', id);
+  const { error: quoteError } = await (supabase as any).from('quotes').delete().eq('id', id);
   if (quoteError) throw quoteError;
 
-  await audit.delete(
+  await audit.log(
+    'DELETE',
     'quotes',
     String(id),
-    oldData,
     `Cotización eliminada: ${oldData?.quote_number || 'Desconocida'}`
   );
   
@@ -167,7 +199,7 @@ export async function deleteQuote(id: number) {
 }
 
 export async function getNextQuoteNumber() {
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from('quotes')
     .select('quote_number')
     .order('created_at', { ascending: false })
@@ -182,8 +214,3 @@ export async function getNextQuoteNumber() {
   
   return 'COT-001';
 }
-
-
-
-
-

@@ -1,17 +1,18 @@
-﻿import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import path from 'path'
+﻿import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import path from 'path';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react()],
-  base: '/',
+  // Web (GitHub Pages) → '/s24-erp/'   ·   Capacitor/APK → './'
+  base: mode === 'capacitor' ? './' : '/s24-erp/',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
   },
-  server: {
-    port: 3000,
-    open: true
-  }
-})
+  server: { port: 3000, open: true },
+  build: {
+    chunkSizeWarningLimit: 1500,
+  },
+}));
