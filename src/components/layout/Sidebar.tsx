@@ -16,11 +16,21 @@ const ICONS: Record<string, React.ElementType> = {
   LayoutDashboard, Users, Phone, ShoppingCart, Wrench, Package, DollarSign, Globe, BarChart, Settings,
 };
 
-export function Sidebar() {
+export function Sidebar({
+  mobileOpen,
+  onMobileClose,
+}: {
+  mobileOpen: boolean
+  onMobileClose: () => void
+}) {
   const [collapsed, setCollapsed] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState(['crm', 'sales']);
   const { signOut, profile } = useAuth();
   const location = useLocation();
+
+  useEffect(() => {
+    onMobileClose();
+  }, [location.pathname]);
   const [userRole, setUserRole] = useState<string>('admin');
 
   useEffect(() => {
@@ -122,7 +132,7 @@ export function Sidebar() {
   const isActive = (path) => path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
 
   return (
-    <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+    <aside className={`sidebar ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
       <div className="sidebar-header">
         <div className="logo">
           <Shield className="logo-icon" size={32} />
@@ -215,5 +225,6 @@ export function Sidebar() {
     </aside>
   );
 }
+
 
 
