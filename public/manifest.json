@@ -1,15 +1,15 @@
-﻿{
+{
   "name": "S24 ERP - Inventario y Cotizaciones",
   "short_name": "S24 ERP",
-  "description": "Sistema de gestión de inventario, servicios CCTV y cotizaciones.",
-  "start_url": "/",
+  "description": "Sistema de gesti�n de inventario, servicios CCTV y cotizaciones.",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#0d6efd",
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/favicon.svg",
+      "src": "./favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"
