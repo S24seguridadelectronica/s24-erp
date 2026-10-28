@@ -6,7 +6,8 @@ import { z } from 'zod';
 import { createOpportunity, updateOpportunity } from '@/services/api/opportunities';
 import { getCustomers, updateCustomer } from '@/services/api/customers';
 import { supabase } from '@/services/supabase/client';
-import { User, Phone, MapPin, FileText, Building } from 'lucide-react';
+import { User, Phone, MapPin, FileText, Building, Calendar, UserCheck } from 'lucide-react';
+import { SellerAssignmentModal } from './SellerAssignmentModal'; // Asegúrate que el archivo exista aquí
 
 const schema = z.object({
   customer_id: z.coerce.number().min(1, 'Selecciona un cliente'),
@@ -19,6 +20,10 @@ const schema = z.object({
   technical_survey: z.string().optional(),
   loss_reason: z.string().optional(),
   notes: z.string().optional(),
+  client_category: z.string().default('Residencial'),
+  next_action: z.string().default('visita'),
+  assigned_to: z.string().optional().nullable(),
+  scheduled_date: z.string().optional().nullable(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -35,13 +40,8 @@ const STAGES = [
 ];
 
 const LOSS_REASONS = [
-  'Precio demasiado alto',
-  'Eligió a la competencia',
-  'Proyecto cancelado',
-  'No contesta / No responde',
-  'No tiene presupuesto',
-  'Cambió de opinión',
-  'Otro motivo'
+  'Precio demasiado alto', 'Eligió a la competencia', 'Proyecto cancelado',
+  'No contesta / No responde', 'No tiene presupuesto', 'Cambió de opinión', 'Otro motivo'
 ];
 
 interface OpportunityFormProps {
@@ -58,14 +58,21 @@ export function OpportunityForm({ show, onHide, opportunity, preselectedCustomer
   const [customers, setCustomers] = useState<any[]>([]);
   const [selectedStage, setSelectedStage] = useState<string>('asignado');
   const [selectedCustomerData, setSelectedCustomerData] = useState<any>(null);
+  
+  const [showSellerModal, setShowSellerModal] = useState(false);
+  const [selectedSellerName, setSelectedSellerName] = useState('');
 
-  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<FormData>({
+  const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: opportunity || { stage: 'asignado', probability: 10, value: 0 }
+    defaultValues: opportunity || { 
+      stage: 'asignado', probability: 10, value: 0, client_category: 'Residencial', next_action: 'visita' 
+    }
   });
 
   const watchedStage = watch('stage', opportunity?.stage || 'asignado');
   const watchedCustomerId = watch('customer_id');
+  const watchedNextAction = watch('next_action');
+  const watchedAssignedTo = watch('assigned_to');
 
   useEffect(() => {
     if (show) {
@@ -76,11 +83,14 @@ export function OpportunityForm({ show, onHide, opportunity, preselectedCustomer
           expected_close_date: opportunity.expected_close_date ? opportunity.expected_close_date.split('T')[0] : '',
           contact_log: opportunity.contact_log || '',
           technical_survey: opportunity.technical_survey || '',
-          loss_reason: opportunity.loss_reason || ''
+          loss_reason: opportunity.loss_reason || '',
+          client_category: opportunity.client_category || 'Residencial',
+          next_action: opportunity.next_action || 'visita',
+          assigned_to: opportunity.assigned_to || '',
+          scheduled_date: opportunity.scheduled_date ? opportunity.scheduled_date.slice(0,16) : '',
         });
         setSelectedStage(opportunity.stage || 'asignado');
         if (opportunity.customer_id) {
-          // Cargar datos del cliente para edición
           const cust = customers.find(c => Number(c.id) === Number(opportunity.customer_id));
           if (cust) setCustomerData(cust);
         }
@@ -92,16 +102,20 @@ export function OpportunityForm({ show, onHide, opportunity, preselectedCustomer
           value: 0,
           expected_close_date: '',
           title: `Oportunidad con ${preselectedCustomer.full_name}`,
-          contact_log: '',
-          technical_survey: '',
-          loss_reason: ''
+          contact_log: '', technical_survey: '', loss_reason: '',
+          client_category: 'Residencial', next_action: 'visita', assigned_to: '', scheduled_date: ''
         });
         setSelectedStage('asignado');
         setCustomerData(preselectedCustomer);
       } else {
-        reset({ stage: 'asignado', probability: 10, value: 0, expected_close_date: '', contact_log: '', technical_survey: '', loss_reason: '' });
+        reset({ 
+          stage: 'asignado', probability: 10, value: 0, expected_close_date: '', 
+          contact_log: '', technical_survey: '', loss_reason: '',
+          client_category: 'Residencial', next_action: 'visita', assigned_to: '', scheduled_date: ''
+        });
         setSelectedStage('asignado');
         setSelectedCustomerData(null);
+        setSelectedSellerName('');
       }
     }
   }, [opportunity, preselectedCustomer, show, reset]);
@@ -157,12 +171,17 @@ export function OpportunityForm({ show, onHide, opportunity, preselectedCustomer
     setError(null);
     try {
       const { data: { user } } = await supabase.auth.getUser();
+      
       const oppData = {
         ...data,
         seller_id: user?.id,
         contact_log: data.contact_log || null,
         technical_survey: data.technical_survey || null,
-        loss_reason: data.stage === 'perdido' ? (data.loss_reason || 'No especificado') : null
+        loss_reason: data.stage === 'perdido' ? (data.loss_reason || 'No especificado') : null,
+        client_category: data.client_category,
+        next_action: data.next_action,
+        assigned_to: data.assigned_to || null,
+        scheduled_date: data.scheduled_date || null
       };
 
       let oppId = opportunity?.id;
@@ -173,7 +192,18 @@ export function OpportunityForm({ show, onHide, opportunity, preselectedCustomer
         oppId = newOpp.id;
       }
 
-      // Actualizar datos del cliente si se modificaron en el formulario
+      if ((data.next_action === 'visita' || data.next_action === 'llamada') && data.assigned_to) {
+        const { error: taskError } = await (supabase.from('tasks') as any).insert([{
+          title: `${data.next_action === 'visita' ? 'Visita Técnica' : 'Asesoría Telefónica'} - ${data.title}`,
+          opportunity_id: oppId,
+          assigned_to: data.assigned_to,
+          due_date: data.scheduled_date || new Date().toISOString(),
+          type: data.next_action,
+          description: data.notes || data.contact_log || 'Sin descripción'
+        }]);
+        if (taskError) console.error("Error creando tarea para vendedor:", taskError);
+      }
+
       if (selectedCustomerData && data.customer_id) {
         await updateCustomer(data.customer_id, {
           document_number: selectedCustomerData.document_number,
@@ -197,205 +227,224 @@ export function OpportunityForm({ show, onHide, opportunity, preselectedCustomer
   };
 
   return (
-    <Modal show={show} onHide={onHide} size="xl" centered>
-      <Form onSubmit={handleSubmit(onSubmit)}>
-        <Modal.Header closeButton>
-          <Modal.Title>{opportunity ? 'Editar Oportunidad' : 'Nueva Oportunidad'}</Modal.Title>
-        </Modal.Header>
-        <Modal.Body style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-          {error && <Alert variant="danger">{error}</Alert>}
-          
-          {/* SECCIÓN: DATOS DEL CLIENTE PARA CONFIRMAR/ACTUALIZAR */}
-          {selectedCustomerData && (
-            <Card className="mb-4 border-info">
-              <Card.Header className="bg-info bg-opacity-10">
-                <h6 className="mb-0"><User size={18} className="me-2" />Datos del Cliente (Confirmar o Actualizar)</h6>
-              </Card.Header>
-              <Card.Body>
-                <Row className="g-3">
-                  <Col md={6}>
-                    <Form.Group>
-                      <Form.Label className="small fw-bold"><FileText size={14} className="me-1" />NIT / Cédula</Form.Label>
-                      <Form.Control 
-                        value={selectedCustomerData.document_number} 
-                        onChange={(e) => updateCustomerField('document_number', e.target.value)} 
-                      />
-                    </Form.Group>
-                  </Col>
-                  <Col md={6}>
-                    <Form.Group>
-                      <Form.Label className="small fw-bold"><Building size={14} className="me-1" />Razón Social / Empresa</Form.Label>
-                      <Form.Control 
-                        value={selectedCustomerData.company_name} 
-                        onChange={(e) => updateCustomerField('company_name', e.target.value)} 
-                      />
-                    </Form.Group>
-                  </Col>
-                  <Col md={6}>
-                    <Form.Group>
-                      <Form.Label className="small fw-bold"><User size={14} className="me-1" />Nombre del Dueño / Contacto</Form.Label>
-                      <Form.Control 
-                        value={selectedCustomerData.contact_person} 
-                        onChange={(e) => updateCustomerField('contact_person', e.target.value)} 
-                        placeholder="Nombre de la persona de contacto"
-                      />
-                    </Form.Group>
-                  </Col>
-                  <Col md={6}>
-                    <Form.Group>
-                      <Form.Label className="small fw-bold"><Phone size={14} className="me-1" />WhatsApp</Form.Label>
-                      <Form.Control 
-                        value={selectedCustomerData.whatsapp_phone} 
-                        onChange={(e) => updateCustomerField('whatsapp_phone', e.target.value)} 
-                        placeholder="Número para WhatsApp"
-                      />
-                    </Form.Group>
-                  </Col>
-                  <Col md={8}>
-                    <Form.Group>
-                      <Form.Label className="small fw-bold"><MapPin size={14} className="me-1" />Dirección Real</Form.Label>
-                      <Form.Control 
-                        value={selectedCustomerData.address} 
-                        onChange={(e) => updateCustomerField('address', e.target.value)} 
-                      />
-                    </Form.Group>
-                  </Col>
-                  <Col md={4}>
-                    <Form.Group>
-                      <Form.Label className="small fw-bold">Ciudad</Form.Label>
-                      <Form.Control 
-                        value={selectedCustomerData.city} 
-                        onChange={(e) => updateCustomerField('city', e.target.value)} 
-                      />
-                    </Form.Group>
-                  </Col>
-                  <Col md={12}>
-                    <Form.Group>
-                      <Form.Label className="small fw-bold">Correo Electrónico</Form.Label>
-                      <Form.Control 
-                        type="email"
-                        value={selectedCustomerData.email} 
-                        onChange={(e) => updateCustomerField('email', e.target.value)} 
-                      />
-                    </Form.Group>
-                  </Col>
-                </Row>
-                <Form.Text className="text-muted mt-2 d-block">
-                  💡 Al guardar esta oportunidad, estos datos se actualizarán automáticamente en la ficha del cliente.
-                </Form.Text>
-              </Card.Body>
-            </Card>
-          )}
-
-          <Row className="g-3">
-            <Col md={12}>
-              <Form.Group>
-                <Form.Label>Cliente *</Form.Label>
-                <Form.Select isInvalid={!!errors.customer_id} {...register('customer_id')} disabled={!!preselectedCustomer && !opportunity}>
-                  <option value="">Selecciona un cliente...</option>
-                  {customers.map(c => <option key={c.id} value={c.id}>{c.full_name} {c.company_name ? '(' + c.company_name + ')' : ''}</option>)}
-                </Form.Select>
-                <Form.Control.Feedback type="invalid">{errors.customer_id?.message}</Form.Control.Feedback>
-              </Form.Group>
-            </Col>
-
-            <Col md={12}>
-              <Form.Group>
-                <Form.Label>Título de la Oportunidad *</Form.Label>
-                <Form.Control isInvalid={!!errors.title} {...register('title')} placeholder="Ej: Instalación de 8 cámaras CCTV" />
-                <Form.Control.Feedback type="invalid">{errors.title?.message}</Form.Control.Feedback>
-              </Form.Group>
-            </Col>
-
-            <Col md={6}>
-              <Form.Group>
-                <Form.Label>Etapa en el Embudo *</Form.Label>
-                <Form.Select isInvalid={!!errors.stage} {...register('stage')} onChange={(e) => setSelectedStage(e.target.value)}>
-                  {STAGES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                </Form.Select>
-                <Form.Control.Feedback type="invalid">{errors.stage?.message}</Form.Control.Feedback>
-              </Form.Group>
-            </Col>
-
-            <Col md={3}>
-              <Form.Group>
-                <Form.Label>Valor Estimado (COP) *</Form.Label>
-                <Form.Control type="number" isInvalid={!!errors.value} {...register('value')} />
-                <Form.Control.Feedback type="invalid">{errors.value?.message}</Form.Control.Feedback>
-              </Form.Group>
-            </Col>
-
-            <Col md={3}>
-              <Form.Group>
-                <Form.Label>Probabilidad (%) *</Form.Label>
-                <Form.Control type="number" min="0" max="100" isInvalid={!!errors.probability} {...register('probability')} />
-                <Form.Control.Feedback type="invalid">{errors.probability?.message}</Form.Control.Feedback>
-              </Form.Group>
-            </Col>
-
-            <Col md={12}>
-              <Form.Group>
-                <Form.Label>Fecha Estimada de Cierre *</Form.Label>
-                <Form.Control type="date" isInvalid={!!errors.expected_close_date} {...register('expected_close_date')} />
-                <Form.Control.Feedback type="invalid">{errors.expected_close_date?.message}</Form.Control.Feedback>
-              </Form.Group>
-            </Col>
-
-            {(selectedStage === 'asignado' || selectedStage === 'contacto') && (
-              <Col md={12}>
-                <Form.Group>
-                  <Form.Label>📞 Bitácora de Contacto / Seguimiento</Form.Label>
-                  <Form.Control
-                    as="textarea"
-                    rows={4}
-                    {...register('contact_log')}
-                    placeholder="Registra las llamadas realizadas, respuestas del cliente, seguimientos programados..."
-                  />
-                </Form.Group>
-              </Col>
+    <>
+      <Modal show={show} onHide={onHide} size="xl" centered>
+        <Form onSubmit={handleSubmit(onSubmit)}>
+          <Modal.Header closeButton>
+            <Modal.Title>{opportunity ? 'Editar Oportunidad' : 'Nueva Oportunidad'}</Modal.Title>
+          </Modal.Header>
+          <Modal.Body style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+            {error && <Alert variant="danger">{error}</Alert>}
+            
+            {selectedCustomerData && (
+              <Card className="mb-4 border-info">
+                <Card.Header className="bg-info bg-opacity-10">
+                  <h6 className="mb-0"><User size={18} className="me-2" />Datos del Cliente (Confirmar o Actualizar)</h6>
+                </Card.Header>
+                <Card.Body>
+                  <Row className="g-3">
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label className="small fw-bold"><FileText size={14} className="me-1" />NIT / Cédula</Form.Label>
+                        <Form.Control value={selectedCustomerData.document_number} onChange={(e) => updateCustomerField('document_number', e.target.value)} />
+                      </Form.Group>
+                    </Col>
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label className="small fw-bold"><Building size={14} className="me-1" />Razón Social / Empresa</Form.Label>
+                        <Form.Control value={selectedCustomerData.company_name} onChange={(e) => updateCustomerField('company_name', e.target.value)} />
+                      </Form.Group>
+                    </Col>
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label className="small fw-bold"><User size={14} className="me-1" />Nombre del Dueño / Contacto</Form.Label>
+                        <Form.Control value={selectedCustomerData.contact_person} onChange={(e) => updateCustomerField('contact_person', e.target.value)} />
+                      </Form.Group>
+                    </Col>
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label className="small fw-bold"><Phone size={14} className="me-1" />WhatsApp</Form.Label>
+                        <Form.Control value={selectedCustomerData.whatsapp_phone} onChange={(e) => updateCustomerField('whatsapp_phone', e.target.value)} />
+                      </Form.Group>
+                    </Col>
+                    <Col md={8}>
+                      <Form.Group>
+                        <Form.Label className="small fw-bold"><MapPin size={14} className="me-1" />Dirección Real</Form.Label>
+                        <Form.Control value={selectedCustomerData.address} onChange={(e) => updateCustomerField('address', e.target.value)} />
+                      </Form.Group>
+                    </Col>
+                    <Col md={4}>
+                      <Form.Group>
+                        <Form.Label className="small fw-bold">Ciudad</Form.Label>
+                        <Form.Control value={selectedCustomerData.city} onChange={(e) => updateCustomerField('city', e.target.value)} />
+                      </Form.Group>
+                    </Col>
+                  </Row>
+                </Card.Body>
+              </Card>
             )}
 
-            {(selectedStage === 'visita' || selectedStage === 'propuesta' || selectedStage === 'negociacion') && (
-              <Col md={12}>
+            <Row className="g-3">
+              <Col md={8}>
                 <Form.Group>
-                  <Form.Label>🔧 Levantamiento Técnico / Requerimientos</Form.Label>
-                  <Form.Control
-                    as="textarea"
-                    rows={4}
-                    {...register('technical_survey')}
-                    placeholder="Detalles del levantamiento técnico..."
-                  />
+                  <Form.Label>Cliente *</Form.Label>
+                  <Form.Select isInvalid={!!errors.customer_id} {...register('customer_id')} disabled={!!preselectedCustomer && !opportunity}>
+                    <option value="">Selecciona un cliente...</option>
+                    {customers.map(c => <option key={c.id} value={c.id}>{c.full_name} {c.company_name ? '(' + c.company_name + ')' : ''}</option>)}
+                  </Form.Select>
+                  <Form.Control.Feedback type="invalid">{errors.customer_id?.message}</Form.Control.Feedback>
                 </Form.Group>
               </Col>
-            )}
-
-            {selectedStage === 'perdido' && (
-              <Col md={12}>
+              
+              <Col md={4}>
                 <Form.Group>
-                  <Form.Label className="text-danger">❌ Motivo de Pérdida *</Form.Label>
-                  <Form.Select isInvalid={!!errors.loss_reason} {...register('loss_reason')}>
-                    <option value="">Selecciona el motivo...</option>
-                    {LOSS_REASONS.map(reason => <option key={reason} value={reason}>{reason}</option>)}
+                  <Form.Label>Categoría del Cliente</Form.Label>
+                  <Form.Select {...register('client_category')}>
+                    <option value="Residencial">Residencial</option>
+                    <option value="Comercial">Comercial</option>
+                    <option value="Industrial">Industrial</option>
+                    <option value="VIP">VIP / Mayorista</option>
                   </Form.Select>
                 </Form.Group>
               </Col>
-            )}
 
-            <Col md={12}>
-              <Form.Group>
-                <Form.Label>Notas Generales</Form.Label>
-                <Form.Control as="textarea" rows={2} {...register('notes')} />
-              </Form.Group>
-            </Col>
-          </Row>
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={onHide} disabled={loading}>Cancelar</Button>
-          <Button variant="primary" type="submit" disabled={loading}>
-            {loading ? <><Spinner animation="border" size="sm" className="me-2" /> Guardando...</> : 'Guardar Oportunidad'}
-          </Button>
-        </Modal.Footer>
-      </Form>
-    </Modal>
+              <Col md={12}>
+                <Form.Group>
+                  <Form.Label>Título de la Oportunidad *</Form.Label>
+                  <Form.Control isInvalid={!!errors.title} {...register('title')} placeholder="Ej: Instalación de 8 cámaras CCTV" />
+                  <Form.Control.Feedback type="invalid">{errors.title?.message}</Form.Control.Feedback>
+                </Form.Group>
+              </Col>
+
+              <Col md={12}>
+                <div className="p-3 bg-light rounded border mb-2">
+                  <h6 className="fw-bold text-primary mb-3">Gestión de la Visita / Acción</h6>
+                  <Row className="g-3">
+                    <Col md={4}>
+                      <Form.Group>
+                        <Form.Label>¿Qué requiere el cliente? *</Form.Label>
+                        <Form.Select {...register('next_action')}>
+                          <option value="visita">Agendar Visita Física</option>
+                          <option value="llamada">Asesoría Telefónica</option>
+                          <option value="cotizacion">Cotización Inmediata</option>
+                        </Form.Select>
+                      </Form.Group>
+                    </Col>
+
+                    {(watchedNextAction === 'visita' || watchedNextAction === 'llamada') && (
+                      <>
+                        <Col md={4}>
+                          <Form.Group>
+                            <Form.Label>Vendedor / Técnico</Form.Label>
+                            <Button 
+                              type="button"
+                              variant={watchedAssignedTo ? "success" : "outline-primary"} 
+                              className="w-100 text-truncate"
+                              onClick={() => setShowSellerModal(true)}
+                            >
+                              <UserCheck size={16} className="me-2" />
+                              {watchedAssignedTo ? selectedSellerName || 'Vendedor Asignado' : 'Asignar Vendedor'}
+                            </Button>
+                          </Form.Group>
+                        </Col>
+                        <Col md={4}>
+                          <Form.Group>
+                            <Form.Label><Calendar size={14} className="me-1"/> Fecha y Hora</Form.Label>
+                            <Form.Control type="datetime-local" {...register('scheduled_date')} />
+                          </Form.Group>
+                        </Col>
+                      </>
+                    )}
+                  </Row>
+                </div>
+              </Col>
+
+              <Col md={6}>
+                <Form.Group>
+                  <Form.Label>Etapa en el Embudo *</Form.Label>
+                  <Form.Select isInvalid={!!errors.stage} {...register('stage')} onChange={(e) => setSelectedStage(e.target.value)}>
+                    {STAGES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+
+              <Col md={3}>
+                <Form.Group>
+                  <Form.Label>Valor Estimado (COP) *</Form.Label>
+                  <Form.Control type="number" isInvalid={!!errors.value} {...register('value')} />
+                </Form.Group>
+              </Col>
+
+              <Col md={3}>
+                <Form.Group>
+                  <Form.Label>Probabilidad (%) *</Form.Label>
+                  <Form.Control type="number" min="0" max="100" isInvalid={!!errors.probability} {...register('probability')} />
+                </Form.Group>
+              </Col>
+
+              <Col md={12}>
+                <Form.Group>
+                  <Form.Label>Fecha Estimada de Cierre *</Form.Label>
+                  <Form.Control type="date" isInvalid={!!errors.expected_close_date} {...register('expected_close_date')} />
+                </Form.Group>
+              </Col>
+
+              {(selectedStage === 'asignado' || selectedStage === 'contacto') && (
+                <Col md={12}>
+                  <Form.Group>
+                    <Form.Label>📞 Bitácora de Contacto / Seguimiento</Form.Label>
+                    <Form.Control as="textarea" rows={3} {...register('contact_log')} placeholder="Registra las llamadas realizadas..." />
+                  </Form.Group>
+                </Col>
+              )}
+
+              {(selectedStage === 'visita' || selectedStage === 'propuesta' || selectedStage === 'negociacion') && (
+                <Col md={12}>
+                  <Form.Group>
+                    <Form.Label>🔧 Levantamiento Técnico / Requerimientos</Form.Label>
+                    <Form.Control as="textarea" rows={3} {...register('technical_survey')} placeholder="Detalles del levantamiento técnico..." />
+                  </Form.Group>
+                </Col>
+              )}
+
+              {selectedStage === 'perdido' && (
+                <Col md={12}>
+                  <Form.Group>
+                    <Form.Label className="text-danger">❌ Motivo de Pérdida *</Form.Label>
+                    <Form.Select isInvalid={!!errors.loss_reason} {...register('loss_reason')}>
+                      <option value="">Selecciona el motivo...</option>
+                      {LOSS_REASONS.map(reason => <option key={reason} value={reason}>{reason}</option>)}
+                    </Form.Select>
+                  </Form.Group>
+                </Col>
+              )}
+              
+              <Col md={12}>
+                <Form.Group>
+                  <Form.Label>Notas Generales</Form.Label>
+                  <Form.Control as="textarea" rows={2} {...register('notes')} />
+                </Form.Group>
+              </Col>
+            </Row>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={onHide} disabled={loading}>Cancelar</Button>
+            <Button variant="primary" type="submit" disabled={loading}>
+              {loading ? <><Spinner animation="border" size="sm" className="me-2" /> Guardando...</> : 'Guardar Oportunidad'}
+            </Button>
+          </Modal.Footer> {/* 👈 ESTA ES LA LÍNEA QUE FALTABA CORREGIR */}
+        </Form>
+      </Modal>
+
+      <SellerAssignmentModal 
+        show={showSellerModal} 
+        onHide={() => setShowSellerModal(false)}
+        onSelectSeller={(id, name) => {
+          setValue('assigned_to', id);
+          setSelectedSellerName(name);
+          setShowSellerModal(false);
+        }}
+      />
+    </>
   );
 }

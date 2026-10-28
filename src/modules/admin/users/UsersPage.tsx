@@ -12,21 +12,34 @@ export function UsersPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingUser, setEditingUser] = useState<any | null>(null);
 
-  useEffect(() => { loadUsers(); }, []);
+  useEffect(() => { 
+    loadUsers(); 
+  }, []);
 
   async function loadUsers() {
     try {
       setLoading(true);
+      setError(null);
+      console.log("🔄 Iniciando carga de usuarios...");
+      
       const data = await getUsers();
-      setUsers(data || []);
+      console.log("✅ Datos recibidos de getUsers:", data);
+      
+      if (Array.isArray(data)) {
+        setUsers(data);
+      } else {
+        console.warn("⚠️ getUsers no devolvió un arreglo, se forzó a vacío:", data);
+        setUsers([]);
+      }
     } catch (err: any) {
-      setError('Error al cargar los usuarios: ' + err.message);
+      console.error("❌ Error en getUsers:", err);
+      setError('Error al cargar los usuarios: ' + (err.message || 'Error desconocido'));
     } finally {
       setLoading(false);
     }
   }
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm('¿Estás seguro de eliminar este usuario?')) {
       try {
         await deleteUser(id);
@@ -37,12 +50,22 @@ export function UsersPage() {
     }
   };
 
-  const filteredUsers = users.filter(user =>
-    user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredUsers = users.filter(user => {
+    const nombre = (user?.full_name || '').toLowerCase();
+    const correo = (user?.email || '').toLowerCase();
+    const busqueda = searchTerm.toLowerCase();
+    
+    return nombre.includes(busqueda) || correo.includes(busqueda);
+  });
 
-  if (loading) return <div className="d-flex justify-content-center align-items-center" style={{ height: '300px' }}><Spinner animation="border" variant="primary" /><span className="ms-2">Cargando...</span></div>;
+  if (loading) {
+    return (
+      <div className="d-flex justify-content-center align-items-center" style={{ height: '300px' }}>
+        <Spinner animation="border" variant="primary" />
+        <span className="ms-2">Cargando usuarios...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="fade-in">
@@ -89,14 +112,20 @@ export function UsersPage() {
                     <td className="ps-4">
                       <div className="d-flex align-items-center">
                         <div className="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-3" style={{ width: '40px', height: '40px', fontWeight: 'bold' }}>
-                          {user.full_name.charAt(0).toUpperCase()}
+                          {(user.full_name || 'U').charAt(0).toUpperCase()}
                         </div>
-                        <div className="fw-semibold">{user.full_name}</div>
+                        <div className="fw-semibold">{user.full_name || 'Sin nombre'}</div>
                       </div>
                     </td>
-                    <td>{user.email}</td>
+                    <td>{user.email || 'Sin correo'}</td>
                     <td>{user.phone || '-'}</td>
-                    <td><Badge bg="info">{user.roles?.name || 'Sin rol'}</Badge></td>
+                    
+                    <td>
+                      <Badge bg="info">
+                        {Array.isArray(user.roles) ? (user.roles[0]?.name || 'Sin rol') : (user.roles?.name || 'Sin rol')}
+                      </Badge>
+                    </td>
+                    
                     <td><Badge bg={user.is_active ? 'success' : 'secondary'}>{user.is_active ? 'Activo' : 'Inactivo'}</Badge></td>
                     <td className="text-end pe-4">
                       <Button variant="outline-primary" size="sm" className="me-2" onClick={() => { setEditingUser(user); setShowForm(true); }}>
@@ -114,7 +143,14 @@ export function UsersPage() {
         </Card.Body>
       </Card>
 
-      <UserForm show={showForm} onHide={() => setShowForm(false)} user={editingUser} onSuccess={loadUsers} />
+      {showForm && (
+        <UserForm 
+          show={showForm} 
+          onHide={() => setShowForm(false)} 
+          user={editingUser} 
+          onSuccess={loadUsers} 
+        />
+      )}
     </div>
   );
 }

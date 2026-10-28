@@ -61,15 +61,23 @@ export function DashboardPage() {
       if (!user) return;
       console.log('🔍 Dashboard - Usuario:', user.email);
 
-      // 2. Determinar rol
+      // 2. Determinar rol (✅ CORREGIDO AQUÍ)
       let isAdmin = user.email === 's24hseguridad@gmail.com';
       try {
-        const { data: profile, error } = await (supabase.from('profiles') as any)
-          .select('role')
-          .eq('id', user.id)
-          .single();
-        if (!error && profile?.role === 'admin') isAdmin = true;
-      } catch (e) {}
+        // Consultamos la tabla user_roles cruzada con roles
+        const { data: roleData, error } = await (supabase.from('user_roles') as any)
+          .select('roles(name)')
+          .eq('user_id', user.id)
+          .maybeSingle();
+          
+        const roleName = roleData?.roles?.name?.toLowerCase() || '';
+        
+        if (!error && (roleName === 'admin' || roleName === 'administrador')) {
+          isAdmin = true;
+        }
+      } catch (e) {
+        console.error("Error consultando rol:", e);
+      }
       setUserRole(isAdmin ? 'admin' : 'vendedor');
 
       // 3. Fechas de referencia

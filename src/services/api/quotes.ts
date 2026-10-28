@@ -35,10 +35,31 @@ export interface Quote {
 // Usamos (supabase as any) para evitar errores de tipos 'never' cuando el esquema de Supabase no está actualizado
 
 export async function getQuotes() {
-  const { data, error } = await (supabase as any)
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // 1. Iniciamos la consulta base
+  let query = (supabase as any)
     .from('quotes')
     .select('*, customers(full_name, company_name), opportunities(title)')
     .order('created_at', { ascending: false });
+
+  // 2. Validamos el rol del usuario
+  if (user) {
+    const { data: roleData } = await (supabase as any)
+      .from('user_roles')
+      .select('roles(name)')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    const roleName = roleData?.roles?.name?.toLowerCase().trim() || '';
+
+    // 3. Si es vendedor de campo, SOLO traemos sus cotizaciones
+    if (roleName === 'vendedor_campo' || roleName === 'field_sales' || roleName === 'cerrador') {
+      query = query.eq('salesperson_id', user.id);
+    }
+  }
+
+  const { data, error } = await query;
   if (error) throw error;
   return data || [];
 }
@@ -54,11 +75,14 @@ export async function getQuoteById(id: number) {
 }
 
 export async function createQuote(quote: any, items: any[]) {
+  const { data: { user } } = await supabase.auth.getUser();
+
   const quoteData: any = {
     quote_number: quote.quote_number,
     customer_id: quote.customer_id,
     opportunity_id: quote.opportunity_id || null,
-    salesperson_id: quote.salesperson_id || null,
+    // 👇 IMPORTANTE: Si no envían un ID, le asignamos el del usuario logueado
+    salesperson_id: quote.salesperson_id || user?.id || null,
     status: quote.status,
     subtotal: quote.subtotal || 0,
     tax_amount: quote.tax_amount || 0,

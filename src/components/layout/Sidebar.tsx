@@ -1,4 +1,4 @@
-﻿import { Calculator } from 'lucide-react';
+﻿import { Calculator, ClipboardList, Navigation } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
@@ -6,14 +6,14 @@ import { supabase } from '@/services/supabase/client';
 import {
   LayoutDashboard, Users, Phone, ShoppingCart, Wrench, Package, DollarSign,
   Globe, BarChart, Settings, LogOut, Shield, ChevronLeft, ChevronRight,
-  ChevronDown, ChevronUp, UserCircle, Target, FileText, ClipboardList,
+  ChevronDown, ChevronUp, UserCircle, Target, FileText, 
   ArrowDownUp, Truck, CreditCard, TrendingUp, Receipt, Activity, Upload, Table,
   ArrowRightLeft, BarChart3
 } from 'lucide-react';
 import './Sidebar.css';
 
 const ICONS: Record<string, React.ElementType> = {
-  LayoutDashboard, Users, Phone, ShoppingCart, Wrench, Package, DollarSign, Globe, BarChart, Settings,
+  LayoutDashboard, Users, Phone, ShoppingCart, Wrench, Package, DollarSign, Globe, BarChart, Settings, Calculator, ClipboardList, Navigation
 };
 
 export function Sidebar({
@@ -31,6 +31,7 @@ export function Sidebar({
   useEffect(() => {
     onMobileClose();
   }, [location.pathname]);
+  
   const [userRole, setUserRole] = useState<string>('admin');
 
   useEffect(() => {
@@ -46,7 +47,15 @@ export function Sidebar({
       .maybeSingle();
 
     const roleName = roleData?.roles?.name?.toLowerCase().trim() || '';
-    if (roleName === 'salesperson' || roleName === 'vendedor') {
+    
+    // 👇 Lógica para detectar los 5 roles
+    if (roleName === 'vendedor_campo' || roleName === 'field_sales' || roleName === 'cerrador') {
+      setUserRole('vendedor_campo');
+    } else if (roleName === 'cobrador_campo' || roleName === 'rutero') {
+      setUserRole('cobrador_campo'); // 👈 NUEVO ROL
+    } else if (roleName === 'cobrador' || roleName === 'cartera' || roleName === 'finanzas') {
+      setUserRole('cobrador');
+    } else if (roleName === 'salesperson' || roleName === 'vendedor' || roleName === 'preventa') {
       setUserRole('salesperson');
     } else {
       setUserRole('admin');
@@ -54,8 +63,25 @@ export function Sidebar({
   }
 
   // Menús según el rol
-  const MENU_ITEMS = userRole === 'salesperson' 
+  const MENU_ITEMS = userRole === 'cobrador_campo'
     ? [
+        // MENÚ EXCLUSIVO PARA EL COBRADOR DE CALLE
+        { key: 'my-field-collections', label: 'Mi Ruta de Cobro', icon: 'Navigation', path: '/mi-ruta-cobro' },
+      ]
+    : userRole === 'cobrador'
+    ? [
+        // MENÚ EXCLUSIVO PARA EL COBRADOR DE OFICINA
+        { key: 'my-collections', label: 'Mis Cobros', icon: 'DollarSign', path: '/mis-cobros' },
+      ]
+    : userRole === 'vendedor_campo'
+    ? [
+        // MENÚ EXCLUSIVO PARA EL VENDEDOR DE CAMPO
+        { key: 'my-tasks', label: 'Mis Visitas', icon: 'ClipboardList', path: '/mis-visitas' },
+        { key: 'sales', label: 'Cotizaciones', icon: 'ShoppingCart', path: '/sales' },
+      ]
+    : userRole === 'salesperson' 
+    ? [
+        // MENÚ PARA EL PREVENTA / VENDEDOR DE LLAMADAS
         { key: 'dashboard', label: 'Mi Dashboard', icon: 'LayoutDashboard', path: '/' },
         { key: 'crm', label: 'Mis Clientes', icon: 'Users', path: '/crm',
           children: [
@@ -70,6 +96,7 @@ export function Sidebar({
         },
       ]
     : [
+        // MENÚ PARA EL ADMINISTRADOR (COMPLETO)
         { key: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard', path: '/' },
         { key: 'crm', label: 'CRM', icon: 'Users', path: '/crm',
           children: [
@@ -81,7 +108,7 @@ export function Sidebar({
         { key: 'sales', label: 'Ventas', icon: 'ShoppingCart', path: '/sales',
           children: [
             { key: 'quotes', label: 'Cotizaciones', path: '/sales' },
-    { key: 'calculator', label: 'Calculadora CCTV', icon: 'Calculator', path: '/calculator' },
+            { key: 'calculator', label: 'Calculadora CCTV', icon: 'Calculator', path: '/calculator' },
           ],
         },
         { key: 'operations', label: 'Operaciones', icon: 'Wrench', path: '/operations',
@@ -125,11 +152,11 @@ export function Sidebar({
         },
       ];
 
-  const toggleMenu = (key) => {
+  const toggleMenu = (key: string) => {
     setExpandedMenus((prev) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]);
   };
 
-  const isActive = (path) => path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
+  const isActive = (path: string) => path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
 
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
@@ -171,6 +198,7 @@ export function Sidebar({
                           {child.key === 'opportunities' && <Target size={16} />}
                           {child.key === 'spreadsheet' && <Table size={16} />}
                           {child.key === 'quotes' && <FileText size={16} />}
+                          {child.key === 'calculator' && <Calculator size={16} />}
                           {child.key === 'work_orders' && <ClipboardList size={16} />}
                           {child.key === 'products' && <Package size={16} />}
                           {child.key === 'movements' && <ArrowDownUp size={16} />}
@@ -213,7 +241,12 @@ export function Sidebar({
             <div className="user-details">
               <div className="user-name">{profile.full_name || 'Usuario'}</div>
               <div className="user-email">{profile.email}</div>
-              {userRole === 'salesperson' && <div className="small text-warning">Vendedor</div>}
+              
+              {/* 👇 ETIQUETAS DE ROL ACTUALIZADAS */}
+              {userRole === 'salesperson' && <div className="small text-warning">Preventa</div>}
+              {userRole === 'vendedor_campo' && <div className="small text-warning">Vendedor de Campo</div>}
+              {userRole === 'cobrador' && <div className="small text-warning">Cobrador Oficina</div>}
+              {userRole === 'cobrador_campo' && <div className="small text-warning">Cobrador de Calle</div>}
             </div>
           </div>
         )}
@@ -225,6 +258,3 @@ export function Sidebar({
     </aside>
   );
 }
-
-
-
