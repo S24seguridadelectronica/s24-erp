@@ -31,6 +31,7 @@ import { OperationsReport } from '@/modules/reports/OperationsReport';
 import { MyTasksPage } from '@/modules/crm/tasks/MyTasksPage';
 import { MyCollectionsPage } from '@/modules/finance/MyCollectionsPage'; 
 import { MyFieldCollectionsPage } from '@/modules/finance/MyFieldCollectionsPage';
+import { CommissionsDashboard } from '@/modules/reports/CommissionsDashboard';
 
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/services/supabase/client';
@@ -48,12 +49,12 @@ function RoleGuard({ allowedRoles }: { allowedRoles: string[] }) {
         const { data, error } = await (supabase.from('user_roles') as any)
           .select('roles(name)')
           .eq('user_id', profile.id)
-          .limit(1); // Usamos limit(1) por si acaso hay roles duplicados
+          .limit(1);
           
         if (error) throw error;
         
         const roleName = data?.[0]?.roles?.name?.toLowerCase().trim() || 'vendedor';
-        console.log("🔍 El sistema detectó tu rol como:", roleName); // 👈 MIRA ESTO EN LA CONSOLA
+        console.log("🔍 El sistema detectó tu rol como:", roleName);
         setUserRole(roleName);
       } catch (error) {
         console.error("Error obteniendo el rol:", error);
@@ -70,12 +71,10 @@ function RoleGuard({ allowedRoles }: { allowedRoles: string[] }) {
   const isAllowed = userRole && allowedRoles.includes(userRole);
   
   if (!isAllowed) {
-    // Redirecciones automáticas para otros roles
     if (userRole === 'cobrador' || userRole === 'cartera') return <Navigate to="/mis-cobros" replace />;
     if (userRole === 'cobrador_campo' || userRole === 'rutero') return <Navigate to="/mi-ruta-cobro" replace />;
     if (userRole === 'vendedor_campo' || userRole === 'field_sales' || userRole === 'cerrador') return <Navigate to="/mis-visitas" replace />;
     
-    // SI NO TIENE PERMISO Y NO ES NINGUNO DE LOS ANTERIORES, MOSTRAMOS ERROR
     return (
       <div className="p-5 text-center">
         <h3 className="text-danger">Acceso Denegado</h3>
@@ -92,17 +91,18 @@ export const router = createHashRouter([
     path: '/',
     element: <ProtectedRoute><MainLayout /></ProtectedRoute>,
     children: [
+      // 👇 RUTAS COMPARTIDAS (Todos los usuarios logueados pueden entrar aquí)
       { path: 'mis-visitas', element: <MyTasksPage /> },
       { path: 'mis-cobros', element: <MyCollectionsPage /> }, 
       { path: 'mi-ruta-cobro', element: <MyFieldCollectionsPage /> }, 
+      { path: 'commissions', element: <CommissionsDashboard /> }, // 👈 Dashboard de comisiones (Filtra internamente)
       { 
         path: 'sales', 
         children: [ { index: true, element: <QuotesPage /> } ]
       },
 
-      // Rutas protegidas (Admin / Preventa)
+      // 👇 RUTAS PROTEGIDAS (Admin / Preventa)
       {
-        // 👇 AQUÍ AGREGAMOS 'admin_super'
         element: <RoleGuard allowedRoles={['admin', 'admin_super', 'administrador', 'preventa', 'salesperson', 'vendedor']} />,
         children: [
           { index: true, element: <DashboardPage /> },

@@ -18,6 +18,11 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
 };
 
 export function QuotesPage() {
+  // Estados para el Modal de Facturación
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [quoteToInvoice, setQuoteToInvoice] = useState<any>(null);
+  const [paymentMethod, setPaymentMethod] = useState('Efectivo');
+
   const [quotes, setQuotes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -151,8 +156,16 @@ export function QuotesPage() {
     }
   };
 
-  const handleGenerarFactura = async (quote: any) => {
-    if (!window.confirm('¿Generar factura para esta cotización?\n\nEsto creará una factura real en el módulo de Cuentas por Cobrar.')) return;
+  // 👇 ABRE EL MODAL DE FACTURACIÓN
+  const handleFacturar = (quote: any) => {
+    setQuoteToInvoice(quote);
+    setPaymentMethod('Efectivo'); // Resetea a Efectivo por defecto
+    setShowInvoiceModal(true);
+  };
+
+  // 👇 CONFIRMA Y GUARDA LA FACTURA EN SUPABASE
+  const confirmarFacturacion = async () => {
+    if (!quoteToInvoice) return;
     
     try {
       const invoiceNumber = await getNextInvoiceNumber();
@@ -161,18 +174,20 @@ export function QuotesPage() {
       
       await createReceivable({
         invoice_number: invoiceNumber,
-        customer_id: quote.customer_id,
-        quote_id: quote.id,
+        customer_id: quoteToInvoice.customer_id,
+        quote_id: quoteToInvoice.id,
         issue_date: hoy,
         due_date: vencimiento,
-        total_amount: quote.total || 0,
+        total_amount: quoteToInvoice.total || 0,
         paid_amount: 0,
         status: 'pending',
-        notes: 'Factura generada desde cotizacion ' + quote.quote_number
+        payment_method: paymentMethod, // 👈 ENVIAMOS EL MÉTODO DEL MODAL
+        notes: 'Factura generada desde cotizacion ' + quoteToInvoice.quote_number
       });
       
-      await updateQuote(quote.id, { status: 'converted' });
-      alert('✅ Factura ' + invoiceNumber + ' generada exitosamente.\n\nYa la puedes ver en Finanzas > Cuentas por Cobrar');
+      await updateQuote(quoteToInvoice.id, { status: 'converted' });
+      alert(`✅ Factura ${invoiceNumber} generada.\n\nMétodo de pago: ${paymentMethod}\nYa está disponible en el módulo de cobros.`);
+      setShowInvoiceModal(false);
       loadQuotes();
     } catch (err: any) {
       console.error('Error generando factura:', err);
@@ -225,6 +240,7 @@ export function QuotesPage() {
       {error && <Alert variant="danger">{error}</Alert>}
 
       <Row className="g-3 mb-3">
+        {/* ... TARJETAS DE ESTADISTICAS (Se mantienen igual) ... */}
         <Col md={2} sm={4} xs={6}>
           <Card className="border-0 shadow-sm text-center">
             <Card.Body className="p-2">
@@ -384,7 +400,7 @@ export function QuotesPage() {
                           )}
                           {quote.status === 'approved' && (
                             <>
-                              <Button variant="outline-primary" size="sm" onClick={() => handleGenerarFactura(quote)} title="Generar Factura">
+                              <Button variant="outline-primary" size="sm" onClick={() => handleFacturar(quote)} title="Generar Factura">
                                 <Receipt size={14} className="me-1" /> Factura
                               </Button>
                               <Button variant="outline-info" size="sm" onClick={() => handleDownloadPdf(quote)} title="Descargar PDF"><FileDown size={14} /></Button>
@@ -414,6 +430,7 @@ export function QuotesPage() {
 
       <QuoteForm show={showForm} onHide={() => setShowForm(false)} quote={editingQuote} onSuccess={loadQuotes} />
 
+      {/* MODAL DE ENVÍO (Se mantiene igual) */}
       <Modal show={showSendModal} onHide={() => setShowSendModal(false)} centered>
         <Modal.Header closeButton>
           <Modal.Title>Enviar Cotización {selectedQuote?.quote_number}</Modal.Title>
@@ -423,7 +440,6 @@ export function QuotesPage() {
             <div className="mb-3 p-3 bg-light rounded">
               <p className="mb-1"><strong>Cliente:</strong> {selectedQuote.customers?.full_name || 'N/A'}</p>
               <p className="mb-1"><strong>Email:</strong> {selectedQuote.customers?.email || 'No registrado'}</p>
-              <p className="mb-1"><strong>Teléfono:</strong> {selectedQuote.customers?.phone || 'No registrado'}</p>
               <p className="mb-1"><strong>WhatsApp:</strong> {selectedQuote.customers?.whatsapp_phone || selectedQuote.customers?.phone || 'No registrado'}</p>
               <p className="mb-0"><strong>Total:</strong> ${selectedQuote.total?.toLocaleString('es-CO')}</p>
             </div>
@@ -465,6 +481,7 @@ export function QuotesPage() {
         </Modal.Footer>
       </Modal>
 
+      {/* MODAL DE HISTORIAL (Se mantiene igual) */}
       <Modal show={showHistoryModal} onHide={() => setShowHistoryModal(false)} centered>
         <Modal.Header closeButton>
           <Modal.Title><Clock size={18} className="me-2" />Historial de Envíos - {historyQuote?.quote_number}</Modal.Title>
@@ -503,6 +520,45 @@ export function QuotesPage() {
           <Button variant="secondary" onClick={() => setShowHistoryModal(false)}>Cerrar</Button>
         </Modal.Footer>
       </Modal>
+
+      {/* 👇 NUEVO MODAL DE FACTURACIÓN CON LISTA DESPLEGABLE */}
+      <Modal show={showInvoiceModal} onHide={() => setShowInvoiceModal(false)} centered>
+        <Modal.Header closeButton className="bg-success text-white">
+          <Modal.Title>Generar Factura</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <div className="mb-4">
+            <p className="mb-1">Cliente: <strong>{quoteToInvoice?.customers?.full_name}</strong></p>
+            <p className="mb-1">Cotización Nº: <strong>{quoteToInvoice?.quote_number}</strong></p>
+            <p className="mb-0 text-success fs-5">Total a Facturar: <strong>${quoteToInvoice?.total?.toLocaleString('es-CO')}</strong></p>
+          </div>
+
+          <Form.Group>
+            <Form.Label className="fw-bold">¿Cómo va a pagar el cliente?</Form.Label>
+            <Form.Select 
+              value={paymentMethod} 
+              onChange={(e) => setPaymentMethod(e.target.value)}
+              className="fw-bold"
+            >
+              <option value="Efectivo">💵 Efectivo (Enviar a Cobrador de Calle)</option>
+              <option value="Transferencia">🏦 Transferencia / Nequi (Cobro en Oficina)</option>
+              <option value="Tarjeta">💳 Tarjeta de Crédito/Débito</option>
+            </Form.Select>
+            <Form.Text className="text-muted">
+              {paymentMethod === 'Efectivo' 
+                ? 'La factura aparecerá en la ruta del cobrador de calle.'
+                : 'La factura aparecerá en la oficina para verificar el pago electrónico.'}
+            </Form.Text>
+          </Form.Group>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowInvoiceModal(false)}>Cancelar</Button>
+          <Button variant="success" onClick={confirmarFacturacion}>
+            Confirmar y Generar Factura
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
     </div>
   );
 }

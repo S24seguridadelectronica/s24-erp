@@ -32,8 +32,6 @@ export interface Quote {
   updated_at?: string;
 }
 
-// Usamos (supabase as any) para evitar errores de tipos 'never' cuando el esquema de Supabase no está actualizado
-
 export async function getQuotes() {
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -81,7 +79,6 @@ export async function createQuote(quote: any, items: any[]) {
     quote_number: quote.quote_number,
     customer_id: quote.customer_id,
     opportunity_id: quote.opportunity_id || null,
-    // 👇 IMPORTANTE: Si no envían un ID, le asignamos el del usuario logueado
     salesperson_id: quote.salesperson_id || user?.id || null,
     status: quote.status,
     subtotal: quote.subtotal || 0,
@@ -160,7 +157,6 @@ export async function updateQuote(id: number, quote: any) {
   if (error || !data) throw error || new Error("No se pudo actualizar la cotización");
 
   if (items && Array.isArray(items)) {
-    // 1. Eliminar items existentes de esta cotización
     const { error: deleteItemsError } = await (supabase as any)
       .from('quote_items')
       .delete()
@@ -168,7 +164,6 @@ export async function updateQuote(id: number, quote: any) {
     
     if (deleteItemsError) throw deleteItemsError;
 
-    // 2. Insertar los nuevos items
     if (items.length > 0) {
       const itemsWithQuoteId: any[] = items.map((item: any) => ({
         quote_id: id,
@@ -237,4 +232,45 @@ export async function getNextQuoteNumber() {
   }
   
   return 'COT-001';
+}
+
+// 👇 FUNCIÓN NUEVA AGREGADA AQUÍ 👇
+export async function convertQuoteToInvoice(quoteId: number, quoteData: any, paymentMethod: string) {
+  const invoiceData = {
+    customer_id: quoteData.customer_id,
+    quote_id: quoteId,
+    issue_date: new Date().toISOString(),
+    due_date: quoteData.valid_until || new Date().toISOString(),
+    total_amount: quoteData.total,
+    paid_amount: 0,
+    status: 'pending',
+    payment_method: paymentMethod, // Guarda si es Efectivo o Transferencia
+    notes: `Factura generada desde cotización ${quoteData.quote_number}`
+  };
+
+  // 1. Crear la factura en Cuentas por Cobrar
+  const { data: invoiceResult, error: invoiceError } = await (supabase as any)
+    .from('accounts_receivable')
+    .insert([invoiceData])
+    .select()
+    .single();
+
+  if (invoiceError) throw invoiceError;
+
+  // 2. Cambiar el estado de la cotización a 'converted' (Facturada)
+  const { error: quoteError } = await (supabase as any)
+    .from('quotes')
+    .update({ status: 'converted' })
+    .eq('id', quoteId);
+
+  if (quoteError) throw quoteError;
+
+  await audit.log(
+    'UPDATE',
+    'quotes',
+    String(quoteId),
+    `Cotización convertida a factura: ${quoteData.quote_number} - Método: ${paymentMethod}`
+  );
+
+  return invoiceResult;
 }

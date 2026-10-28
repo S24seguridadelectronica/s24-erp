@@ -13,7 +13,9 @@ import {
 import './Sidebar.css';
 
 const ICONS: Record<string, React.ElementType> = {
-  LayoutDashboard, Users, Phone, ShoppingCart, Wrench, Package, DollarSign, Globe, BarChart, Settings, Calculator, ClipboardList, Navigation
+  LayoutDashboard, Users, Phone, ShoppingCart, Wrench, Package, DollarSign, 
+  Globe, BarChart, Settings, Calculator, ClipboardList, Navigation, 
+  TrendingUp // 👈 Agregamos el ícono de comisiones
 };
 
 export function Sidebar({
@@ -48,11 +50,10 @@ export function Sidebar({
 
     const roleName = roleData?.roles?.name?.toLowerCase().trim() || '';
     
-    // 👇 Lógica para detectar los 5 roles
     if (roleName === 'vendedor_campo' || roleName === 'field_sales' || roleName === 'cerrador') {
       setUserRole('vendedor_campo');
     } else if (roleName === 'cobrador_campo' || roleName === 'rutero') {
-      setUserRole('cobrador_campo'); // 👈 NUEVO ROL
+      setUserRole('cobrador_campo'); 
     } else if (roleName === 'cobrador' || roleName === 'cartera' || roleName === 'finanzas') {
       setUserRole('cobrador');
     } else if (roleName === 'salesperson' || roleName === 'vendedor' || roleName === 'preventa') {
@@ -62,26 +63,25 @@ export function Sidebar({
     }
   }
 
-  // Menús según el rol
+  // 👇 Menús según el rol (Agregamos Comisiones a todos)
   const MENU_ITEMS = userRole === 'cobrador_campo'
     ? [
-        // MENÚ EXCLUSIVO PARA EL COBRADOR DE CALLE
         { key: 'my-field-collections', label: 'Mi Ruta de Cobro', icon: 'Navigation', path: '/mi-ruta-cobro' },
+        { key: 'commissions', label: 'Mis Comisiones', icon: 'TrendingUp', path: '/commissions' }, // 👈
       ]
     : userRole === 'cobrador'
     ? [
-        // MENÚ EXCLUSIVO PARA EL COBRADOR DE OFICINA
         { key: 'my-collections', label: 'Mis Cobros', icon: 'DollarSign', path: '/mis-cobros' },
+        { key: 'commissions', label: 'Mis Comisiones', icon: 'TrendingUp', path: '/commissions' }, // 👈
       ]
     : userRole === 'vendedor_campo'
     ? [
-        // MENÚ EXCLUSIVO PARA EL VENDEDOR DE CAMPO
         { key: 'my-tasks', label: 'Mis Visitas', icon: 'ClipboardList', path: '/mis-visitas' },
         { key: 'sales', label: 'Cotizaciones', icon: 'ShoppingCart', path: '/sales' },
+        { key: 'commissions', label: 'Mis Comisiones', icon: 'TrendingUp', path: '/commissions' }, // 👈
       ]
     : userRole === 'salesperson' 
     ? [
-        // MENÚ PARA EL PREVENTA / VENDEDOR DE LLAMADAS
         { key: 'dashboard', label: 'Mi Dashboard', icon: 'LayoutDashboard', path: '/' },
         { key: 'crm', label: 'Mis Clientes', icon: 'Users', path: '/crm',
           children: [
@@ -94,6 +94,7 @@ export function Sidebar({
             { key: 'quotes', label: 'Mis Cotizaciones', path: '/sales' },
           ],
         },
+        { key: 'commissions', label: 'Mis Comisiones', icon: 'TrendingUp', path: '/commissions' }, // 👈
       ]
     : [
         // MENÚ PARA EL ADMINISTRADOR (COMPLETO)
@@ -131,6 +132,7 @@ export function Sidebar({
             { key: 'transactions', label: 'Transacciones', path: '/finance/transactions' },
           ],
         },
+        { key: 'commissions', label: 'Comisiones del Equipo', icon: 'TrendingUp', path: '/commissions' }, // 👈 Movido al nivel principal
         { key: 'reports', label: 'Informes', icon: 'BarChart', path: '/reports',
           children: [
             { key: 'dashboard', label: 'Dashboard', path: '/reports' },
@@ -242,7 +244,6 @@ export function Sidebar({
               <div className="user-name">{profile.full_name || 'Usuario'}</div>
               <div className="user-email">{profile.email}</div>
               
-              {/* 👇 ETIQUETAS DE ROL ACTUALIZADAS */}
               {userRole === 'salesperson' && <div className="small text-warning">Preventa</div>}
               {userRole === 'vendedor_campo' && <div className="small text-warning">Vendedor de Campo</div>}
               {userRole === 'cobrador' && <div className="small text-warning">Cobrador Oficina</div>}

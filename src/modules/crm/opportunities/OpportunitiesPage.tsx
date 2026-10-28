@@ -1,10 +1,12 @@
 ﻿import { useState, useEffect } from 'react';
 import { Card, Row, Col, Badge, Button, Spinner, Alert } from 'react-bootstrap';
 import { getOpportunities } from '@/services/api/opportunities';
-import { Plus, TrendingUp, DollarSign, Calendar, Edit2, FileText } from 'lucide-react';
+import { Plus, TrendingUp, DollarSign, Calendar, Edit2, FileText, Activity } from 'lucide-react';
 import { OpportunityForm } from './OpportunityForm';
 import { QuoteForm } from '@/modules/sales/quotes/QuoteForm';
 import { supabase } from '@/services/supabase/client';
+// 👇 IMPORTAMOS EL MODAL DE PROGRESO
+import { TrackOpportunityModal } from './TrackOpportunityModal';
 
 const STAGES = [
   { key: 'asignado', label: '1. Asignado', color: 'secondary' },
@@ -25,6 +27,10 @@ export function OpportunitiesPage() {
   const [editingOpp, setEditingOpp] = useState<any | null>(null);
   const [showQuoteForm, setShowQuoteForm] = useState(false);
   const [preselectedOppForQuote, setPreselectedOppForQuote] = useState<any | null>(null);
+
+  // 👇 ESTADOS PARA EL MODAL DE PROGRESO
+  const [showTrackModal, setShowTrackModal] = useState(false);
+  const [selectedOppId, setSelectedOppId] = useState<string | null>(null);
 
   useEffect(() => { loadOpportunities(); }, []);
 
@@ -149,6 +155,21 @@ export function OpportunitiesPage() {
                         <td>${(opp.value || 0).toLocaleString('es-CO')}</td>
                         <td>{opp.probability || 0}%</td>
                         <td className="text-end pe-4">
+                          
+                          {/* 👇 BOTÓN DE PROGRESO AQUÍ */}
+                          <Button 
+                            variant="outline-info" 
+                            size="sm" 
+                            className="me-2" 
+                            onClick={() => {
+                              setSelectedOppId(String(opp.id));
+                              setShowTrackModal(true);
+                            }} 
+                            title="Ver Progreso (Visita, Factura, Pagos)"
+                          >
+                            <Activity size={16} />
+                          </Button>
+
                           <Button variant="outline-primary" size="sm" className="me-2" onClick={() => { setEditingOpp(opp); setShowForm(true); }} title="Editar Oportunidad">
                             <Edit2 size={16} />
                           </Button>
@@ -180,6 +201,13 @@ export function OpportunitiesPage() {
         onHide={() => setShowQuoteForm(false)}
         preselectedOpportunity={preselectedOppForQuote}
         onSuccess={() => { setShowQuoteForm(false); loadOpportunities(); }}
+      />
+
+      {/* 👇 CONECTAMOS EL MODAL DE PROGRESO AL FINAL */}
+      <TrackOpportunityModal 
+        show={showTrackModal} 
+        onHide={() => setShowTrackModal(false)} 
+        opportunityId={selectedOppId} 
       />
     </div>
   );

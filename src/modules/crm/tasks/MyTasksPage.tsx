@@ -1,16 +1,18 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Card, Table, Badge, Spinner, Button, Modal, Form, Alert, Dropdown, ButtonGroup, Row, Col } from 'react-bootstrap';
+import { Card, Table, Badge, Spinner, Button, Modal, Form, Alert, Row, Col } from 'react-bootstrap';
 import { supabase } from '@/services/supabase/client';
-import { Calendar, MapPin, User, Phone, CheckCircle, Edit3, FileText, ClipboardCheck } from 'lucide-react';
+import { Calendar, MapPin, User, Phone, CheckCircle, Edit3, FileText, ClipboardCheck, Activity } from 'lucide-react';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
+// 👇 IMPORTAMOS EL MODAL DE TRAZABILIDAD
+import { TrackOpportunityModal } from '../opportunities/TrackOpportunityModal';
 
 export function MyTasksPage() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   
-  // 👇 ESTADO PARA EL FILTRO DESPLEGABLE
+  // ESTADO PARA EL FILTRO DESPLEGABLE
   const [activeFilter, setActiveFilter] = useState('todas');
 
   const [showModal, setShowModal] = useState(false);
@@ -21,6 +23,10 @@ export function MyTasksPage() {
   const [taskStatus, setTaskStatus] = useState('completada');
   const [technicalSurvey, setTechnicalSurvey] = useState('');
   const [lossReason, setLossReason] = useState('');
+
+  // 👇 ESTADOS PARA EL MODAL DE PROGRESO
+  const [showTrackModal, setShowTrackModal] = useState(false);
+  const [selectedOppId, setSelectedOppId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchMyTasks();
@@ -181,14 +187,12 @@ export function MyTasksPage() {
                 const isClosed = task.opportunities?.stage === 'ganado' || task.opportunities?.stage === 'perdido' || task.status === 'rechazada';
 
                 return (
-                  // COLOR AL BORDE IZQUIERDO DE LA FILA
                   <tr key={task.id} style={{ borderLeft: `6px solid ${info.color}` }}>
                     <td>
                       <strong>{task.opportunities?.title || task.title}</strong>
                       <div className="small text-muted">Etapa: {task.opportunities?.stage}</div>
                     </td>
                     
-                    {/* CELDA DEL CLIENTE CON COLOR Y FONDO SUAVE */}
                     <td style={{ backgroundColor: `${info.color}15` }}>
                       <div className="fw-bold" style={{ color: info.color }}>
                         <User size={14} className="me-1" />
@@ -217,6 +221,20 @@ export function MyTasksPage() {
                     
                     <td>
                       <div className="d-flex gap-2 justify-content-center">
+                        {/* 👇 BOTÓN DE PROGRESO (Siempre visible) */}
+                        <Button 
+                          variant="outline-info" 
+                          size="sm" 
+                          onClick={() => {
+                            setSelectedOppId(String(task.opportunities?.id));
+                            setShowTrackModal(true);
+                          }}
+                          title="Ver estado de la venta"
+                        >
+                          <Activity size={14} className="me-1" /> Progreso
+                        </Button>
+
+                        {/* Botones de acción (Solo si no está cerrada) */}
                         {!isClosed && (
                           <>
                             <Button variant="warning" size="sm" onClick={() => handleCotizar(task)}>
@@ -238,7 +256,6 @@ export function MyTasksPage() {
                             </Button>
                           </>
                         )}
-                        {isClosed && <span className="text-muted small fst-italic">Finalizada</span>}
                       </div>
                     </td>
                   </tr>
@@ -313,6 +330,13 @@ export function MyTasksPage() {
           </Button>
         </Modal.Footer>
       </Modal>
+
+      {/* 👇 MODAL DE LÍNEA DE TIEMPO / PROGRESO */}
+      <TrackOpportunityModal 
+        show={showTrackModal} 
+        onHide={() => setShowTrackModal(false)} 
+        opportunityId={selectedOppId} 
+      />
     </div>
   );
 }

@@ -18,13 +18,15 @@ export function MyFieldCollectionsPage() {
 
   const fetchFieldInvoices = async () => {
     try {
-      // Traemos las facturas pendientes o parciales
+      setLoading(true);
+      // Traemos las facturas pendientes SOLO SI SON EN EFECTIVO
       const { data, error } = await (supabase.from('accounts_receivable') as any)
         .select(`
           *,
           customers ( full_name, company_name, whatsapp_phone, address, city )
         `)
         .neq('status', 'paid')
+        .eq('payment_method', 'Efectivo') // 👈 FILTRO MÁGICO: Solo efectivo
         .order('issue_date', { ascending: true });
 
       if (!error && data) setInvoices(data);
@@ -74,70 +76,86 @@ export function MyFieldCollectionsPage() {
 
   return (
     <div className="p-3">
-      <div className="mb-4">
-        <h3 className="fw-bold m-0">Ruta de Cobro</h3>
-        <p className="text-muted small">Visita a los clientes y registra los pagos en efectivo.</p>
+      <div className="mb-4 d-flex justify-content-between align-items-center">
+        <div>
+          <h3 className="fw-bold m-0">Ruta de Cobro (Efectivo)</h3>
+          <p className="text-muted small mb-0">Visita a los clientes y registra los pagos en efectivo.</p>
+        </div>
+        <Badge bg="warning" text="dark" className="fs-6 px-3 py-2">
+          Total por Cobrar: {fmtMoney(invoices.reduce((sum, inv) => sum + (inv.total_amount - (inv.paid_amount || 0)), 0))}
+        </Badge>
       </div>
 
-      <Row className="g-3">
-        {invoices.map((inv) => {
-          const saldo = inv.total_amount - (inv.paid_amount || 0);
-          
-          // Formatear número de teléfono para WhatsApp
-          const phone = inv.customers?.whatsapp_phone?.replace(/\D/g, '');
-          const waLink = phone ? `https://wa.me/57${phone}` : '#';
-          
-          // Formatear dirección para Google Maps
-          const addressQuery = encodeURIComponent(`${inv.customers?.address}, ${inv.customers?.city}`);
-          const mapLink = `https://www.google.com/maps/search/?api=1&query=${addressQuery}`;
+      {invoices.length === 0 ? (
+        <Card className="border-0 shadow-sm text-center py-5 mt-4">
+          <Card.Body>
+            <CheckCircle size={60} className="text-success mb-3" />
+            <h4 className="fw-bold">¡No tienes rutas pendientes!</h4>
+            <p className="text-muted">No hay facturas pendientes de cobro en efectivo en este momento.</p>
+          </Card.Body>
+        </Card>
+      ) : (
+        <Row className="g-3">
+          {invoices.map((inv) => {
+            const saldo = inv.total_amount - (inv.paid_amount || 0);
+            
+            // Formatear número de teléfono para WhatsApp
+            const phone = inv.customers?.whatsapp_phone?.replace(/\D/g, '');
+            const waLink = phone ? `https://wa.me/57${phone}` : '#';
+            
+            // Formatear dirección para Google Maps
+            const addressQuery = encodeURIComponent(`${inv.customers?.address}, ${inv.customers?.city}`);
+            const mapLink = `https://www.google.com/maps/search/?api=1&query=${addressQuery}`;
 
-          return (
-            <Col xs={12} md={6} xl={4} key={inv.id}>
-              <Card className="border-0 shadow-sm h-100">
-                <Card.Header className="bg-warning bg-opacity-25 border-0 d-flex justify-content-between align-items-center">
-                  <strong>Factura #{inv.id.substring(0, 6)}</strong>
-                  <Badge bg="danger" className="fs-6">{fmtMoney(saldo)}</Badge>
-                </Card.Header>
-                <Card.Body>
-                  <h5 className="fw-bold mb-1">{inv.customers?.full_name}</h5>
-                  <p className="text-muted small mb-3">{inv.customers?.company_name || 'Persona Natural'}</p>
-                  
-                  <div className="d-flex align-items-start gap-2 mb-2 text-secondary">
-                    <MapPin size={18} className="mt-1 flex-shrink-0" />
-                    <span className="small">{inv.customers?.address}, {inv.customers?.city}</span>
-                  </div>
+            return (
+              <Col xs={12} md={6} xl={4} key={inv.id}>
+                <Card className="border-0 shadow-sm h-100">
+                  <Card.Header className="bg-warning bg-opacity-25 border-0 d-flex justify-content-between align-items-center">
+                    {/* 👇 CORRECCIÓN: String(inv.id) para evitar el crash */}
+                    <strong>Factura #{String(inv.id).substring(0, 6)}</strong>
+                    <Badge bg="danger" className="fs-6">{fmtMoney(saldo)}</Badge>
+                  </Card.Header>
+                  <Card.Body>
+                    <h5 className="fw-bold mb-1">{inv.customers?.full_name}</h5>
+                    <p className="text-muted small mb-3">{inv.customers?.company_name || 'Persona Natural'}</p>
+                    
+                    <div className="d-flex align-items-start gap-2 mb-2 text-secondary">
+                      <MapPin size={18} className="mt-1 flex-shrink-0" />
+                      <span className="small">{inv.customers?.address}, {inv.customers?.city}</span>
+                    </div>
 
-                  <Row className="g-2 mt-3">
-                    <Col>
-                      <Button variant="outline-secondary" className="w-100" href={mapLink} target="_blank">
-                        <Navigation size={16} className="me-1" /> Ir
-                      </Button>
-                    </Col>
-                    <Col>
-                      <Button variant="outline-success" className="w-100" href={waLink} target="_blank">
-                        <Phone size={16} className="me-1" /> Llamar
-                      </Button>
-                    </Col>
-                  </Row>
-                </Card.Body>
-                <Card.Footer className="bg-white border-0 p-3">
-                  <Button 
-                    variant="success" 
-                    className="w-100 fw-bold py-2"
-                    onClick={() => {
-                      setSelectedInvoice(inv);
-                      setPaymentAmount(saldo);
-                      setShowModal(true);
-                    }}
-                  >
-                    <DollarSign size={18} className="me-1" /> Cobrar en Sitio
-                  </Button>
-                </Card.Footer>
-              </Card>
-            </Col>
-          );
-        })}
-      </Row>
+                    <Row className="g-2 mt-3">
+                      <Col>
+                        <Button variant="outline-secondary" className="w-100" href={mapLink} target="_blank">
+                          <Navigation size={16} className="me-1" /> Ir
+                        </Button>
+                      </Col>
+                      <Col>
+                        <Button variant="outline-success" className="w-100" href={waLink} target="_blank">
+                          <Phone size={16} className="me-1" /> Llamar
+                        </Button>
+                      </Col>
+                    </Row>
+                  </Card.Body>
+                  <Card.Footer className="bg-white border-0 p-3">
+                    <Button 
+                      variant="success" 
+                      className="w-100 fw-bold py-2"
+                      onClick={() => {
+                        setSelectedInvoice(inv);
+                        setPaymentAmount(saldo); // Prellenar con el saldo
+                        setShowModal(true);
+                      }}
+                    >
+                      <DollarSign size={18} className="me-1" /> Cobrar en Sitio
+                    </Button>
+                  </Card.Footer>
+                </Card>
+              </Col>
+            );
+          })}
+        </Row>
+      )}
 
       {/* MODAL DE COBRO FÍSICO */}
       <Modal show={showModal} onHide={() => setShowModal(false)} centered>
@@ -157,6 +175,7 @@ export function MyFieldCollectionsPage() {
               <Form.Control 
                 type="number" 
                 min="1"
+                max={selectedInvoice?.total_amount - (selectedInvoice?.paid_amount || 0)}
                 value={paymentAmount}
                 onChange={(e) => setPaymentAmount(Number(e.target.value))}
               />
