@@ -1,22 +1,14 @@
-﻿import { useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Modal, Button, Form, Row, Col, Card, Alert, Badge, InputGroup } from 'react-bootstrap';
 import {
-  Modal, Button, Form, Row, Col, Card, Alert, Badge, InputGroup,
-} from 'react-bootstrap';
-import {
-  Calculator, Copy, Wrench, Video, RotateCcw, Settings, Globe,
-  Smartphone, KeyRound, HardDrive, Power, PlusCircle, CheckCircle2,
-  ClipboardList, MapPin, Package, Clock3, Info, Ruler, ArrowUp, Zap,
+  Calculator, Copy, Wrench, Video, RotateCcw, Settings, Globe, Smartphone, KeyRound,
+  HardDrive, Power, PlusCircle, CheckCircle2, ClipboardList, MapPin, Package, Clock3,
+  Info, Ruler, ArrowUp, Zap, AlertTriangle, Trash2, Camera, X
 } from 'lucide-react';
 
 /* =========================================================================
- * Tipos base
+ * Tipos
  * ========================================================================= */
-
-interface CalcularServiciosProps {
-  show: boolean;
-  onHide: () => void;
-  onAddItems: (items: QuoteItem[]) => void;
-}
 
 interface QuoteItem {
   item_type: 'product' | 'service';
@@ -27,46 +19,10 @@ interface QuoteItem {
   tax_rate: number;
 }
 
-type ServiceKey =
-  | 'maintenance' | 'video' | 'reset' | 'configuration' | 'remote'
-  | 'app' | 'password' | 'recording' | 'power' | 'other';
-
-type PriceKey =
-  | 'pReset' | 'pConfiguration' | 'pRemote' | 'pApp' | 'pPassword' | 'pRecording'
-  | 'pVisit' | 'pPower' | 'pOther'
-  | 'pAccessDistance' | 'pAccessHeight' | 'pAccessHeightDistance'
-  | 'pDvrAccessBase' | 'pDvrAccessDistance' | 'pDvrAccessHeight'
-  | 'pDvrExtraChannel' | 'pDvrDifficultySurcharge'
-  | 'pCableDistanceRate' | 'pCableHeightRate';
-
-type VideoCause =
-  | 'balun' | 'power' | 'splice' | 'cable'
-  | 'camera' | 'dvr-channel' | 'unknown';
-
-type VideoMaterialKey =
-  | 'cable' | 'powerSupply' | 'videoBalun' | 'camera' | 'dvrChannel';
-
-type MaintenanceTaskKey =
-  | 'lensAndHousingCleaning'
-  | 'powerSupplyChange'
-  | 'videoBalunChange'
-  | 'cableChange'
-  | 'junctionBoxChange'
-  | 'internalDvrCleaning'
-  | 'resplice'
-  | 'batteryChange'
-  | 'firmwareUpdate';
-
-type MaintenanceMaterialKey =
-  | 'powerSupply' | 'videoBalun' | 'cable'
-  | 'junctionBox' | 'cr2032Battery' | 'bncConnector';
-
-type DvrDifficulty = 'easy' | 'difficult';
-
-interface ServiceDefinition {
-  icon: typeof Wrench;
-  label: string;
-  description: string;
+interface CalcularServiciosProps {
+  show: boolean;
+  onHide: () => void;
+  onAddItems: (items: QuoteItem[]) => void;
 }
 
 interface ServiceLine {
@@ -77,206 +33,158 @@ interface ServiceLine {
   itemType: 'service' | 'product';
 }
 
-interface CalculationResult {
-  direct: boolean;
-  title: string;
-  message: string;
-  script: string;
-  lines: ServiceLine[];
-  subtotal: number;
-}
-
-interface VideoCauseDefinition {
-  value: VideoCause;
-  label: string;
-  suggestedMaterials: VideoMaterialKey[];
-}
-
-interface VideoMaterialDefinition {
-  key: VideoMaterialKey;
-  label: string;
-  unit: string;
-  defaultQuantity: number;
-  defaultPrice: number;
-}
-
-interface MaintenanceTaskDefinition {
-  key: MaintenanceTaskKey;
+interface MaterialState { selected: boolean; quantity: number; unitPrice: number }
+interface DifficultyState { selected: boolean; price: number; text?: string }
+interface CatalogItem {
+  key: string;
   label: string;
   unit: string;
   defaultQuantity: number;
   defaultPrice: number;
   perCamera?: boolean;
-  laborOnly?: boolean;
 }
 
-interface MaintenanceMaterialDefinition {
-  key: MaintenanceMaterialKey;
+interface FaultGroup {
+  id: string;
   label: string;
-  unit: string;
-  defaultQuantity: number;
-  defaultPrice: number;
+  tasks: Items;
+  photo?: string;
 }
 
-interface MaterialState {
-  selected: boolean;
-  quantity: number;
-  unitPrice: number;
+interface DvrGroup {
+  id: string;
+  label: string;
+  included: boolean;
+  distance: string;
+  height: string;
+  channels: string;
+  photo?: string;
+  difficulties: Record<string, DifficultyState>;
 }
+
+type Items = Record<string, MaterialState>;
+type VideoCause = 'balun' | 'power' | 'splice' | 'cable' | 'camera' | 'dvr-channel' | 'unknown';
+type Option = [string, string];
 
 /* =========================================================================
  * Catálogos
  * ========================================================================= */
 
-const SERVICES: Record<ServiceKey, ServiceDefinition> = {
-  maintenance: { icon: Wrench, label: 'Mantenimiento preventivo', description: 'Revisión, limpieza y pruebas del sistema.' },
-  video: { icon: Video, label: 'Pérdida de video', description: 'Una o varias cámaras no muestran imagen.' },
-  reset: { icon: RotateCcw, label: 'Reseteo DVR/NVR', description: 'Restablecimiento sujeto a compatibilidad.' },
-  configuration: { icon: Settings, label: 'Configuración DVR/NVR', description: 'Ajustes y puesta a punto del grabador.' },
-  remote: { icon: Globe, label: 'Acceso remoto', description: 'Visualización desde celular o computador.' },
-  app: { icon: Smartphone, label: 'Configuración de aplicación', description: 'Instalación y vinculación de la app.' },
-  password: { icon: KeyRound, label: 'Contraseña', description: 'Cambio o recuperación según fabricante.' },
-  recording: { icon: HardDrive, label: 'Revisión de grabaciones', description: 'Revisión de configuración y almacenamiento.' },
-  power: { icon: Power, label: 'Alimentación eléctrica', description: 'Revisión inicial de fuente y conexiones.' },
-  other: { icon: PlusCircle, label: 'Otro servicio', description: 'Requiere descripción y evaluación.' },
+const SERVICES = {
+  maintenance:   { icon: Wrench,     label: 'Mantenimiento preventivo',    name: 'Mantenimiento preventivo',            description: 'Revisión, limpieza y pruebas del sistema.' },
+  video:         { icon: Video,      label: 'Pérdida de video',            name: 'Atención por pérdida de video',       description: 'Una o varias cámaras no muestran imagen.' },
+  reset:         { icon: RotateCcw,  label: 'Reseteo DVR/NVR',             name: 'Reseteo DVR/NVR',                     description: 'Restablecimiento sujeto a compatibilidad.' },
+  configuration: { icon: Settings,   label: 'Configuración DVR/NVR',       name: 'Configuración DVR/NVR',               description: 'Ajustes y puesta a punto del grabador.' },
+  remote:        { icon: Globe,      label: 'Acceso remoto',               name: 'Configuración de acceso remoto',      description: 'Visualización desde celular o computador.' },
+  app:           { icon: Smartphone, label: 'Configuración de aplicación', name: 'Configuración de aplicación',         description: 'Instalación y vinculación de la app.' },
+  password:      { icon: KeyRound,   label: 'Contraseña',                  name: 'Cambio o recuperación de contraseña', description: 'Cambio o recuperación según fabricante.' },
+  recording:     { icon: HardDrive,  label: 'Revisión de grabaciones',     name: 'Revisión de grabaciones',             description: 'Revisión de configuración y almacenamiento.' },
+  power:         { icon: Power,      label: 'Alimentación eléctrica',      name: 'Revisión de alimentación',            description: 'Revisión inicial de fuente y conexiones.' },
+  other:         { icon: PlusCircle, label: 'Otro servicio',               name: 'Otro servicio',                       description: 'Requiere descripción y evaluación.' },
 };
+type ServiceKey = keyof typeof SERVICES;
 
-const SERVICE_NAMES: Record<ServiceKey, string> = {
-  maintenance: 'Mantenimiento preventivo',
-  video: 'Atención por pérdida de video',
-  reset: 'Reseteo DVR/NVR',
-  configuration: 'Configuración DVR/NVR',
-  remote: 'Configuración de acceso remoto',
-  app: 'Configuración de aplicación',
-  password: 'Cambio o recuperación de contraseña',
-  recording: 'Revisión de grabaciones',
-  power: 'Revisión de alimentación',
-  other: 'Otro servicio',
-};
+const PRICE_CONFIG = [
+  { key: 'pReset',                label: 'Reseteo DVR/NVR',                                   value: 80000 },
+  { key: 'pConfiguration',        label: 'Configuración DVR/NVR',                             value: 100000 },
+  { key: 'pRemote',               label: 'Acceso remoto',                                     value: 90000 },
+  { key: 'pApp',                  label: 'Configuración de aplicación',                       value: 60000 },
+  { key: 'pPassword',             label: 'Cambio / recuperación de contraseña',               value: 70000 },
+  { key: 'pRecording',            label: 'Revisión de grabaciones',                           value: 90000 },
+  { key: 'pVisit',                label: 'Visita / diagnóstico técnico',                      value: 80000 },
+  { key: 'pPower',                label: 'Pérdida de video / alimentación',                   value: 80000 },
+  { key: 'pOther',                label: 'Evaluación de otro servicio',                       value: 80000 },
+  { key: 'pAccessDistance',       label: 'Accesibilidad cámaras — metro de distancia adicional', value: 1500 },
+  { key: 'pAccessHeight',         label: 'Accesibilidad cámaras — metro de altura adicional',    value: 15000 },
+  { key: 'pAccessHeightDistance', label: 'Accesibilidad cámaras — penalización por altura sobre la distancia (por metro)', value: 2000 },
+  { key: 'pDvrAccessBase',        label: 'Accesibilidad DVR — base (0–10 m / 0–3 m / 0–4 canales)', value: 60000 },
+  { key: 'pDvrAccessDistance',    label: 'Accesibilidad DVR — metro de distancia adicional',  value: 1500 },
+  { key: 'pDvrAccessHeight',      label: 'Accesibilidad DVR — metro de altura adicional',     value: 15000 },
+  { key: 'pDvrExtraChannel',      label: 'Accesibilidad DVR — canal de video adicional (desde el 5.º)', value: 5000 },
+  { key: 'pCableDistanceRate',    label: 'Cambio de cableado — metro de distancia adicional', value: 1500 },
+  { key: 'pCableHeightRate',      label: 'Cambio de cableado — metro de altura adicional',    value: 15000 },
+] as const;
 
-const DEFAULT_PRICES: Record<PriceKey, number> = {
-  pReset: 80000,
-  pConfiguration: 100000,
-  pRemote: 90000,
-  pApp: 60000,
-  pPassword: 70000,
-  pRecording: 90000,
-  pVisit: 80000,
-  pPower: 80000,
-  pOther: 80000,
-  pAccessDistance: 1500,
-  pAccessHeight: 15000,
-  pAccessHeightDistance: 2000,
-  pDvrAccessBase: 60000,
-  pDvrAccessDistance: 1500,
-  pDvrAccessHeight: 15000,
-  pDvrExtraChannel: 5000,
-  pDvrDifficultySurcharge: 20,
-  pCableDistanceRate: 1500,
-  pCableHeightRate: 15000,
-};
+type PriceKey = (typeof PRICE_CONFIG)[number]['key'];
+type Prices = Record<PriceKey, number>;
+const DEFAULT_PRICES = Object.fromEntries(PRICE_CONFIG.map(p => [p.key, p.value])) as Prices;
 
-const PRICE_FIELDS: { key: PriceKey; label: string }[] = [
-  { key: 'pReset', label: 'Reseteo DVR/NVR' },
-  { key: 'pConfiguration', label: 'Configuración DVR/NVR' },
-  { key: 'pRemote', label: 'Acceso remoto' },
-  { key: 'pApp', label: 'Configuración de aplicación' },
-  { key: 'pPassword', label: 'Cambio / recuperación de contraseña' },
-  { key: 'pRecording', label: 'Revisión de grabaciones' },
-  { key: 'pVisit', label: 'Visita / diagnóstico técnico' },
-  { key: 'pPower', label: 'Pérdida de video / alimentación' },
-  { key: 'pOther', label: 'Evaluación de otro servicio' },
-  { key: 'pAccessDistance', label: 'Accesibilidad cámaras — metro de distancia adicional' },
-  { key: 'pAccessHeight', label: 'Accesibilidad cámaras — metro de altura adicional' },
-  { key: 'pAccessHeightDistance', label: 'Accesibilidad cámaras — penalización por altura sobre la distancia (por metro)' },
-  { key: 'pDvrAccessBase', label: 'Accesibilidad DVR — base (0–10 m / 0–3 m / 0–4 canales)' },
-  { key: 'pDvrAccessDistance', label: 'Accesibilidad DVR — metro de distancia adicional' },
-  { key: 'pDvrAccessHeight', label: 'Accesibilidad DVR — metro de altura adicional' },
-  { key: 'pDvrExtraChannel', label: 'Accesibilidad DVR — canal de video adicional (desde el 5.º)' },
-  { key: 'pDvrDifficultySurcharge', label: 'Accesibilidad DVR — recargo por dificultad (%)' },
-  { key: 'pCableDistanceRate', label: 'Cambio de cableado — metro de distancia adicional' },
-  { key: 'pCableHeightRate', label: 'Cambio de cableado — metro de altura adicional' },
+const item = (
+  key: string, label: string, unit: string, defaultQuantity: number, defaultPrice: number, perCamera?: boolean,
+): CatalogItem => ({ key, label, unit, defaultQuantity, defaultPrice, perCamera });
+
+const GLOBAL_TASKS = [
+  item('lensAndHousingCleaning', 'Limpieza de lentes y carcaza',                'cámara',  8, 35000, true),
+  item('internalDvrCleaning',    'Limpieza interna de DVR/NVR',                 'equipo',  1, 30000),
+  item('batteryChange',          'Cambio de batería interna del DVR',           'equipo',  1, 20000),
+  item('firmwareUpdate',         'Actualización de firmware',                   'equipo',  1, 40000),
 ];
 
-/* --- Mantenimiento: tareas (todas mano de obra) --- */
-const MAINTENANCE_TASKS: MaintenanceTaskDefinition[] = [
-  { key: 'lensAndHousingCleaning', label: 'Limpieza de lentes y carcaza',              unit: 'cámara',  defaultQuantity: 8, defaultPrice: 35000, perCamera: true, laborOnly: true },
-  { key: 'powerSupplyChange',      label: 'Cambio de fuente (mano de obra)',           unit: 'unidad',  defaultQuantity: 1, defaultPrice: 45000, laborOnly: true },
-  { key: 'videoBalunChange',       label: 'Cambio de video baluns (mano de obra)',     unit: 'par',     defaultQuantity: 1, defaultPrice: 45000, laborOnly: true },
-  { key: 'cableChange',            label: 'Cambio de cableado (mano de obra)',         unit: 'punto',   defaultQuantity: 1, defaultPrice: 50000, laborOnly: true },
-  { key: 'junctionBoxChange',      label: 'Cambio de caja de paso (mano de obra)',     unit: 'unidad',  defaultQuantity: 1, defaultPrice: 15000, laborOnly: true },
-  { key: 'internalDvrCleaning',    label: 'Limpieza interna de DVR/NVR',               unit: 'equipo',  defaultQuantity: 1, defaultPrice: 30000, laborOnly: true },
-  { key: 'resplice',               label: 'Reempalme de empalmes',                     unit: 'empalme', defaultQuantity: 1, defaultPrice: 45000, laborOnly: true },
-  { key: 'batteryChange',          label: 'Cambio de batería interna del DVR',         unit: 'equipo',  defaultQuantity: 1, defaultPrice: 20000, laborOnly: true },
-  { key: 'firmwareUpdate',         label: 'Actualización de firmware',                 unit: 'equipo',  defaultQuantity: 1, defaultPrice: 40000, laborOnly: true },
+const FAULT_TASKS = [
+  item('powerSupplyChange',      'Cambio de fuente de alimentación',            'unidad',  1, 45000),
+  item('videoBalunChange',       'Cambio de video baluns',                      'par',     1, 45000),
+  item('cableChange',            'Cambio de cableado',                          'punto',   1, 50000),
+  item('cameraChange',           'Cambio de cámara',                            'unidad',  1, 45000),
+  item('junctionBoxChange',      'Cambio de caja de paso',                      'unidad',  1, 15000),
+  item('resplice',               'Reempalme de cableado',                       'empalme', 1, 45000),
 ];
 
-const MAINTENANCE_MATERIALS: MaintenanceMaterialDefinition[] = [
-  { key: 'powerSupply',   label: 'Fuente de alimentación',     unit: 'unidad', defaultQuantity: 1,  defaultPrice: 45000 },
-  { key: 'videoBalun',    label: 'Video balun',                unit: 'par',    defaultQuantity: 1,  defaultPrice: 25000 },
-  { key: 'cable',         label: 'Cable UTP / coaxial',        unit: 'metros', defaultQuantity: 20, defaultPrice: 3500 },
-  { key: 'junctionBox',   label: 'Caja de paso',               unit: 'unidad', defaultQuantity: 1,  defaultPrice: 8000 },
-  { key: 'cr2032Battery', label: 'Batería interna (CR2032)',   unit: 'unidad', defaultQuantity: 1,  defaultPrice: 5000 },
-  { key: 'bncConnector',  label: 'Conector BNC',               unit: 'unidad', defaultQuantity: 1,  defaultPrice: 3000 },
-];
-
-const INITIAL_MAINTENANCE_TASKS: Record<MaintenanceTaskKey, MaterialState> = {
-  lensAndHousingCleaning: { selected: true,  quantity: 8, unitPrice: 35000 },
-  powerSupplyChange:      { selected: false, quantity: 1, unitPrice: 45000 },
-  videoBalunChange:       { selected: false, quantity: 1, unitPrice: 45000 },
-  cableChange:            { selected: false, quantity: 1, unitPrice: 50000 },
-  junctionBoxChange:      { selected: false, quantity: 1, unitPrice: 15000 },
-  internalDvrCleaning:    { selected: false, quantity: 1, unitPrice: 30000 },
-  resplice:               { selected: false, quantity: 1, unitPrice: 45000 },
-  batteryChange:          { selected: false, quantity: 1, unitPrice: 20000 },
-  firmwareUpdate:         { selected: false, quantity: 1, unitPrice: 40000 },
+const M = {
+  powerSupply: item('powerSupply', 'Fuente de alimentación', 'unidad', 1, 45000),
+  videoBalun:  item('videoBalun',  'Video balun',            'par',    1, 25000),
+  cable:       item('cable',       'Cable UTP / coaxial',    'metros', 20, 3500),
+  camera:      item('camera',      'Cámara de seguridad',    'unidad', 1, 180000),
 };
 
-const INITIAL_MAINTENANCE_MATERIALS: Record<MaintenanceMaterialKey, MaterialState> = {
-  powerSupply:   { selected: false, quantity: 1,  unitPrice: 45000 },
-  videoBalun:    { selected: false, quantity: 1,  unitPrice: 25000 },
-  cable:         { selected: false, quantity: 20, unitPrice: 3500 },
-  junctionBox:   { selected: false, quantity: 1,  unitPrice: 8000 },
-  cr2032Battery: { selected: false, quantity: 1,  unitPrice: 5000 },
-  bncConnector:  { selected: false, quantity: 1,  unitPrice: 3000 },
-};
-
-/* --- Video --- */
-const VIDEO_CAUSES: VideoCauseDefinition[] = [
-  { value: 'balun',       label: 'Video balun defectuoso',                 suggestedMaterials: ['videoBalun'] },
-  { value: 'power',       label: 'Fuente de alimentación',                  suggestedMaterials: ['powerSupply'] },
-  { value: 'splice',      label: 'Empalme o conector en mal estado',        suggestedMaterials: [] },
-  { value: 'cable',       label: 'Cable dañado (requiere cambio)',          suggestedMaterials: ['cable'] },
-  { value: 'camera',      label: 'Cámara dañada',                           suggestedMaterials: ['camera'] },
-  { value: 'dvr-channel', label: 'Canal del DVR/NVR dañado',                suggestedMaterials: ['dvrChannel'] },
-  { value: 'unknown',     label: 'No se sabe / requiere diagnóstico',       suggestedMaterials: [] },
+const MAINTENANCE_MATERIALS = [
+  M.powerSupply, M.videoBalun, M.cable, M.camera,
+  item('junctionBox',   'Caja de paso',             'unidad', 1, 8000),
+  item('cr2032Battery', 'Batería interna (CR2032)', 'unidad', 1, 5000),
+  item('bncConnector',  'Conector BNC',             'unidad', 1, 3000),
 ];
 
-const VIDEO_MATERIALS: VideoMaterialDefinition[] = [
-  { key: 'cable',       label: 'Cable UTP / coaxial',        unit: 'metros', defaultQuantity: 20, defaultPrice: 3500 },
-  { key: 'powerSupply', label: 'Fuente de alimentación',     unit: 'unidad', defaultQuantity: 1,  defaultPrice: 45000 },
-  { key: 'videoBalun',  label: 'Video balun',                unit: 'par',    defaultQuantity: 1,  defaultPrice: 25000 },
-  { key: 'camera',      label: 'Cámara de seguridad',        unit: 'unidad', defaultQuantity: 1,  defaultPrice: 180000 },
-  { key: 'dvrChannel',  label: 'Reemplazo de canal DVR/NVR', unit: 'unidad', defaultQuantity: 1,  defaultPrice: 250000 },
+const VIDEO_MATERIALS = [
+  M.cable, M.powerSupply, M.videoBalun, M.camera,
+  item('dvrChannel', 'Reemplazo de canal DVR/NVR', 'unidad', 1, 250000),
 ];
 
-const INITIAL_VIDEO_MATERIALS: Record<VideoMaterialKey, MaterialState> = {
-  cable:       { selected: false, quantity: 20, unitPrice: 3500 },
-  powerSupply: { selected: false, quantity: 1,  unitPrice: 45000 },
-  videoBalun:  { selected: false, quantity: 1,  unitPrice: 25000 },
-  camera:      { selected: false, quantity: 1,  unitPrice: 180000 },
-  dvrChannel:  { selected: false, quantity: 1,  unitPrice: 250000 },
+const VIDEO_CAUSES: { value: VideoCause; label: string; suggested: string[] }[] = [
+  { value: 'balun',       label: 'Pérdida de video por cambio de video baluns',  suggested: ['videoBalun'] },
+  { value: 'power',       label: 'Pérdida de video por cambio de fuente',         suggested: ['powerSupply'] },
+  { value: 'splice',      label: 'Pérdida de video por reempalme del cableado',   suggested: [] },
+  { value: 'cable',       label: 'Pérdida de video por cambio de cable',          suggested: ['cable'] },
+  { value: 'camera',      label: 'Pérdida de video por cambio de cámara',         suggested: ['camera'] },
+  { value: 'dvr-channel', label: 'Canal del DVR/NVR dañado',                      suggested: ['dvrChannel'] },
+  { value: 'unknown',     label: 'No se sabe / requiere diagnóstico',             suggested: [] },
+];
+
+const AFFECTED: Record<string, { factor: number; option: string; label: string }> = {
+  '1':   { factor: 0.75, option: '1 cámara',         label: '1 cámara afectada' },
+  '2-4': { factor: 1,    option: '2 a 4 cámaras',    label: '2 a 4 cámaras afectadas' },
+  '5-8': { factor: 1.5,  option: '5 a 8 cámaras',    label: '5 a 8 cámaras afectadas' },
+  '9+':  { factor: 2,    option: 'Más de 8 cámaras', label: 'Más de 8 cámaras afectadas' },
 };
 
-/* =========================================================================
- * Constantes
- * ========================================================================= */
+const DIFFICULTIES = [
+  { key: 'reversedRack',   label: 'DVR de espaldas en Rack (Baluns atrás)',       price: 15000 },
+  { key: 'tangledCables',  label: 'Cableado enredado / cables muy cortos',        price: 20000 },
+  { key: 'tightSpace',     label: 'Espacio ultra reducido (No cabe la mano)',     price: 10000 },
+  { key: 'dirtyEquipment', label: 'Equipo muy sucio / polvo / pelos de mascota',  price: 8000 },
+  { key: 'noWorkspace',    label: 'Sin espacio de trabajo (No hay mesa cerca)',   price: 5000 },
+];
 
-const BASE_DISTANCE_M = 10;
-const BASE_HEIGHT_M = 3;
-const BASE_DVR_DISTANCE_M = 10;
-const BASE_DVR_HEIGHT_M = 3;
-const BASE_DVR_CHANNELS = 4;
+const BASE = { distance: 10, height: 3, dvrDistance: 10, dvrHeight: 3, dvrChannels: 4 };
+const IVA = 0.19;
+const DEVICE_SERVICES = ['maintenance', 'reset', 'configuration', 'remote', 'app', 'password', 'recording'];
+const CAUSE_SERVICES = ['power', 'recording'];
+const INTERNET_SERVICES = ['remote', 'app'];
+
+const BUNDLE_DISCOUNTS = [
+  { min: 2, pct: 15 },
+  { min: 3, pct: 30 },
+  { min: 4, pct: 45 },
+  { min: 5, pct: 60 },
+] as const;
 
 /* =========================================================================
  * Helpers
@@ -287,504 +195,600 @@ const money = (value: number) => new Intl.NumberFormat('es-CO', {
 }).format(Number.isFinite(value) ? value : 0);
 
 const nonNegative = (value: unknown) => Math.max(0, Number(value) || 0);
+const excess = (value: number, base: number) => Math.max(0, value - base);
+const lineTotal = (m: MaterialState) => m.quantity * m.unitPrice;
+const sumSelected = (items: Items) => Object.values(items).reduce((s, m) => (m.selected ? s + lineTotal(m) : s), 0);
+const opts = (...values: string[]): Option[] => values.map(v => [v, v]);
 
-function calcularExcedenteAccesibilidadCamaras(
-  avgDistance: number,
-  avgHeight: number,
-  prices: Record<PriceKey, number>,
-) {
-  const extraDistance = Math.max(0, avgDistance - BASE_DISTANCE_M);
-  const extraHeight = Math.max(0, avgHeight - BASE_HEIGHT_M);
+const initItems = (defs: CatalogItem[], selected: string[] = []): Items =>
+  Object.fromEntries(defs.map(d => [d.key, {
+    selected: selected.includes(d.key), quantity: d.defaultQuantity, unitPrice: d.defaultPrice,
+  }]));
+
+function useItems(defs: CatalogItem[], selected?: string[]) {
+  const [items, setItems] = useState<Items>(() => initItems(defs, selected));
+  const patch = useCallback(
+    (key: string, p: Partial<MaterialState>) => setItems(prev => ({ ...prev, [key]: { ...prev[key], ...p } })),
+    [],
+  );
+  return [items, patch, setItems] as const;
+}
+
+function calcularAccesibilidadCamaras(distance: number, height: number, prices: Prices) {
+  const extraDistance = excess(distance, BASE.distance);
+  const extraHeight = excess(height, BASE.height);
   const distanceRate = prices.pAccessDistance + extraHeight * prices.pAccessHeightDistance;
   const distanceCost = extraDistance * distanceRate;
   const heightCost = extraHeight * prices.pAccessHeight;
-  return {
-    extraDistance,
-    extraHeight,
-    distanceRate,
-    distanceCost,
-    heightCost,
-    total: distanceCost + heightCost,
-  };
+  return { extraDistance, extraHeight, distanceRate, distanceCost, heightCost, total: distanceCost + heightCost };
 }
 
-function calcularAccesibilidadDvr(
-  distance: number,
-  height: number,
-  channels: number,
-  difficulty: DvrDifficulty,
-  prices: Record<PriceKey, number>,
-) {
-  const extraDistance = Math.max(0, distance - BASE_DVR_DISTANCE_M);
-  const extraHeight = Math.max(0, height - BASE_DVR_HEIGHT_M);
-  const extraChannels = Math.max(0, Math.floor(channels) - BASE_DVR_CHANNELS);
+function calcularAccesibilidadDvr(distance: number, height: number, channels: number, difficultyCost: number, prices: Prices) {
+  const extraDistance = excess(distance, BASE.dvrDistance);
+  const extraHeight = excess(height, BASE.dvrHeight);
+  const extraChannels = excess(Math.floor(channels), BASE.dvrChannels);
   const base = prices.pDvrAccessBase;
   const distanceCost = extraDistance * prices.pDvrAccessDistance;
   const heightCost = extraHeight * prices.pDvrAccessHeight;
   const channelCost = extraChannels * prices.pDvrExtraChannel;
   const subtotal = base + distanceCost + heightCost + channelCost;
-  const difficultyCost = difficulty === 'difficult'
-    ? Math.round(subtotal * (prices.pDvrDifficultySurcharge / 100))
-    : 0;
   return {
-    base,
-    extraDistance,
-    extraHeight,
-    extraChannels,
-    distanceCost,
-    heightCost,
-    channelCost,
-    subtotal,
-    difficultyCost,
-    difficultyLabel: difficulty === 'difficult' ? 'Difícil acceso' : 'Fácil acceso',
-    difficultyPercent: difficulty === 'difficult' ? prices.pDvrDifficultySurcharge : 0,
-    total: subtotal + difficultyCost,
+    base, extraDistance, extraHeight, extraChannels, distanceCost, heightCost, channelCost,
+    subtotal, difficultyCost, total: subtotal + difficultyCost,
   };
 }
 
-/**
- * Monto total del "Cambio de cableado":
- *   - $50.000 por punto, con 10 m de distancia y 3 m de altura incluidos.
- *   - El técnico puede ajustar los metros específicos del cableado (independiente
- *     de la "distancia/altura promedio" de las cámaras).
- *   - Cada metro extra de distancia se cobra a pCableDistanceRate ($1.500/m).
- *   - Cada metro extra de altura se cobra a pCableHeightRate ($15.000/m).
- */
-function calcularMontoCableado(
-  task: MaterialState,
-  cableDistance: number,
-  cableHeight: number,
-  prices: Record<PriceKey, number>,
-) {
-  if (!task.selected) {
-    return { total: 0, baseAmount: 0, distanceExcess: 0, heightExcess: 0, extraDistance: 0, extraHeight: 0 };
-  }
-  const extraDistance = Math.max(0, cableDistance - BASE_DISTANCE_M);
-  const extraHeight = Math.max(0, cableHeight - BASE_HEIGHT_M);
-  const baseAmount = task.quantity * task.unitPrice;
+function calcularMontoCableado(task: MaterialState, distance: number, height: number, prices: Prices) {
+  const extraDistance = excess(distance, BASE.distance);
+  const extraHeight = excess(height, BASE.height);
+  if (!task.selected) return { total: 0, baseAmount: 0, distanceExcess: 0, heightExcess: 0, extraDistance, extraHeight };
+  const baseAmount = lineTotal(task);
   const distanceExcess = task.quantity * extraDistance * prices.pCableDistanceRate;
   const heightExcess = task.quantity * extraHeight * prices.pCableHeightRate;
-  return {
-    total: baseAmount + distanceExcess + heightExcess,
-    baseAmount,
-    distanceExcess,
-    heightExcess,
-    extraDistance,
-    extraHeight,
-  };
+  return { total: baseAmount + distanceExcess + heightExcess, baseAmount, distanceExcess, heightExcess, extraDistance, extraHeight };
 }
 
 /* =========================================================================
- * Componente
+ * Subcomponentes de UI
+ * ========================================================================= */
+
+const Step = ({ n, children }: { n: number; children: ReactNode }) => (
+  <div className="d-flex align-items-center gap-2">
+    <span className="rounded-circle bg-primary text-white px-2 py-1 small fw-bold">{n}</span>
+    {children}
+  </div>
+);
+
+const Panel = ({ children, className = '' }: { children: ReactNode; className?: string }) => (
+  <div className={`border rounded-3 p-3 bg-light ${className}`}>{children}</div>
+);
+
+const PanelHeader = ({ title, hint, badge }: { title: ReactNode; hint: ReactNode; badge?: ReactNode }) => (
+  <div className="d-flex justify-content-between align-items-center mb-2">
+    <div>
+      <div className="fw-semibold small">{title}</div>
+      <div className="text-muted small">{hint}</div>
+    </div>
+    {badge}
+  </div>
+);
+
+const Row2 = ({ l, r, className = '' }: { l: ReactNode; r: ReactNode; className?: string }) => (
+  <div className={`d-flex justify-content-between ${className}`}><span>{l}</span><span>{r}</span></div>
+);
+
+const Breakdown = ({ rows }: { rows: [ReactNode, number][] }) => (
+  <div className="small text-muted mt-2" style={{ lineHeight: 1.4 }}>
+    {rows.map(([label, amount], i) => <Row2 key={i} l={label} r={money(amount)} />)}
+  </div>
+);
+
+const PriceInput = ({ value, onChange, disabled, placeholder, maxWidth }: {
+  value: number | string; onChange: (v: string) => void; disabled?: boolean; placeholder?: string; maxWidth?: number;
+}) => (
+  <InputGroup size="sm" style={maxWidth ? { maxWidth } : undefined}>
+    <InputGroup.Text>$</InputGroup.Text>
+    <Form.Control type="number" min={0} value={value} disabled={disabled} placeholder={placeholder}
+      onChange={e => onChange(e.target.value)} />
+  </InputGroup>
+);
+
+interface NumFieldProps {
+  id: string;
+  label: string;
+  value: string | number;
+  onChange: (v: string) => void;
+  icon?: typeof MapPin;
+  unit?: string;
+  prefix?: string;
+  size?: 'sm';
+  min?: number;
+  compact?: boolean;
+}
+
+function NumField({ id, label, value, onChange, icon: Icon, unit, prefix, size, min = 0, compact }: NumFieldProps) {
+  return (
+    <Form.Group controlId={id}>
+      <Form.Label className={`small fw-semibold ${compact ? 'mb-0' : ''}`}>
+        {Icon && <Icon size={compact ? 12 : 14} className="me-1" />}{label}
+      </Form.Label>
+      <InputGroup size={size}>
+        {prefix && <InputGroup.Text>{prefix}</InputGroup.Text>}
+        <Form.Control type="number" min={min} step={1} value={value} onChange={e => onChange(e.target.value)} />
+        {unit && <InputGroup.Text>{unit}</InputGroup.Text>}
+      </InputGroup>
+    </Form.Group>
+  );
+}
+
+const SelectField = ({ id, label, value, onChange, options }: {
+  id: string; label: string; value: string; onChange: (v: string) => void; options: Option[];
+}) => (
+  <Form.Group controlId={id}>
+    <Form.Label className="small fw-semibold">{label}</Form.Label>
+    <Form.Select value={value} onChange={e => onChange(e.target.value)}>
+      {options.map(([v, text]) => <option key={v} value={v}>{text}</option>)}
+    </Form.Select>
+  </Form.Group>
+);
+
+interface ItemRowsProps {
+  defs: CatalogItem[];
+  state: Items;
+  patch: (key: string, p: Partial<MaterialState>) => void;
+  labelWidth: number;
+  priceWidth?: number;
+  totalOf?: (key: string) => number;
+  afterUnit?: (def: CatalogItem, st: MaterialState) => ReactNode;
+  below?: (def: CatalogItem, st: MaterialState) => ReactNode;
+}
+
+function ItemRows({ defs, state, patch, labelWidth, priceWidth = 160, totalOf, afterUnit, below }: ItemRowsProps) {
+  return (
+    <>
+      {defs.map(def => {
+        const st = state[def.key];
+        return (
+          <div key={def.key} className="border-top py-2">
+            <div className="d-flex flex-wrap align-items-center gap-2">
+              <Form.Check
+                type="checkbox" className="me-2" checked={st.selected}
+                onChange={e => patch(def.key, { selected: e.target.checked })}
+                label={<span className="small fw-semibold">{def.label}</span>}
+                style={{ minWidth: labelWidth }}
+              />
+              <Form.Control
+                type="number" min={1} size="sm" value={st.quantity} disabled={!st.selected}
+                onChange={e => patch(def.key, { quantity: Math.max(1, nonNegative(e.target.value)) })}
+                style={{ maxWidth: 80 }}
+              />
+              <span className="small text-muted">{def.unit}</span>
+              {afterUnit?.(def, st)}
+              <PriceInput value={st.unitPrice} disabled={!st.selected} maxWidth={priceWidth}
+                onChange={v => patch(def.key, { unitPrice: nonNegative(v) })} />
+              <span className="small fw-semibold ms-auto">{money(totalOf ? totalOf(def.key) : lineTotal(st))}</span>
+            </div>
+            {below?.(def, st)}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+/* =========================================================================
+ * Componente principal
  * ========================================================================= */
 
 export function CalcularServicios({ show, onHide, onAddItems }: CalcularServiciosProps) {
   const [selectedService, setSelectedService] = useState<ServiceKey>('maintenance');
   const [showPrices, setShowPrices] = useState(false);
-  const [prices, setPrices] = useState<Record<PriceKey, number>>({ ...DEFAULT_PRICES });
-
+  const [prices, setPrices] = useState<Prices>({ ...DEFAULT_PRICES });
+  
   const [videoCause, setVideoCause] = useState<VideoCause>('unknown');
-  const [videoMaterials, setVideoMaterials] = useState<Record<VideoMaterialKey, MaterialState>>(
-    () => ({ ...INITIAL_VIDEO_MATERIALS }),
-  );
 
-  const [maintenanceTasks, setMaintenanceTasks] = useState<Record<MaintenanceTaskKey, MaterialState>>(
-    () => ({ ...INITIAL_MAINTENANCE_TASKS }),
-  );
-  const [maintenanceMaterials, setMaintenanceMaterials] = useState<Record<MaintenanceMaterialKey, MaterialState>>(
-    () => ({ ...INITIAL_MAINTENANCE_MATERIALS }),
-  );
+  const [videoMaterials, patchVideoMaterial, setVideoMaterials] = useItems(VIDEO_MATERIALS);
+  const [globalTasks, patchGlobalTask] = useItems(GLOBAL_TASKS, ['lensAndHousingCleaning']);
+  
+  const [faultGroups, setFaultGroups] = useState<FaultGroup[]>(() => [
+    { id: 'group-1', label: 'Cámara 1', tasks: initItems(FAULT_TASKS), photo: undefined }
+  ]);
 
-  const [includeDvrAccess, setIncludeDvrAccess] = useState(false);
+  // NUEVO: Estado para múltiples grabadores (DVR/NVR)
+  const [dvrGroups, setDvrGroups] = useState<DvrGroup[]>(() => [
+    {
+      id: 'dvr-1',
+      label: 'DVR / NVR 1',
+      included: false,
+      distance: '10',
+      height: '3',
+      channels: '4',
+      photo: undefined,
+      difficulties: {
+        ...Object.fromEntries(DIFFICULTIES.map(d => [d.key, { selected: false, price: d.price }])),
+        custom: { selected: false, price: 0, text: '' },
+      },
+    },
+  ]);
+
+  const [maintenanceMaterials, patchMaterial] = useItems(MAINTENANCE_MATERIALS);
 
   const [data, setData] = useState({
-    cameras: '8',
-    device: 'DVR',
-    knownCause: 'yes',
-    affected: '1',
-    internet: 'yes',
-    otherText: '',
-    travel: '20000',
-    materials: '0',
-    extraLabor: '0',
-    avgDistance: '10',
-    avgHeight: '3',
-    dvrDistance: '10',
-    dvrHeight: '3',
-    dvrChannels: '4',
-    dvrDifficulty: 'easy' as DvrDifficulty,
-    // Metros específicos del cambio de cableado (base: 10 m / 3 m)
-    cableDistance: '10',
-    cableHeight: '3',
+    cameras: '8', device: 'DVR', knownCause: 'yes', affected: '1', internet: 'yes', otherText: '',
+    travel: '20000', materials: '0', extraLabor: '0',
+    avgDistance: '10', avgHeight: '3',
+    cableDistance: '10', cableHeight: '3',
   });
+  type DataKey = keyof typeof data;
 
-  const updateField = (field: keyof typeof data, value: string) => {
-    setData(previous => ({ ...previous, [field]: value }));
-  };
+  const updateField = (field: DataKey, value: string) => setData(prev => ({ ...prev, [field]: value }));
+  const bind = (field: DataKey) => ({ value: data[field], onChange: (v: string) => updateField(field, v) });
+  const updatePrice = (field: PriceKey, value: string) => setPrices(prev => ({ ...prev, [field]: nonNegative(value) }));
 
-  const updatePrice = (field: PriceKey, value: string) => {
-    setPrices(previous => ({ ...previous, [field]: nonNegative(value) }));
-  };
+  const cameraCount = Math.max(1, Math.floor(Number(data.cameras) || 1));
+  const cableDistance = nonNegative(data.cableDistance);
+  const cableHeight = nonNegative(data.cableHeight);
 
-  /* Sincroniza la cantidad de "Limpieza de lentes y carcaza" con la cantidad de cámaras. */
   useEffect(() => {
-    const count = Math.max(1, Math.floor(Number(data.cameras) || 1));
-    setMaintenanceTasks(prev => ({
-      ...prev,
-      lensAndHousingCleaning: { ...prev.lensAndHousingCleaning, quantity: count },
-    }));
-  }, [data.cameras]);
+    patchGlobalTask('lensAndHousingCleaning', { quantity: cameraCount });
+  }, [cameraCount, patchGlobalTask]);
 
-  const syncTaskQuantityToCameras = (key: MaintenanceTaskKey) => {
-    const cameraCount = Math.max(1, Math.floor(Number(data.cameras) || 1));
-    setMaintenanceTasks(prev => ({
+  // Handlers para Cámaras
+  const addFaultGroup = () => {
+    setFaultGroups(prev => [
       ...prev,
-      [key]: { ...prev[key], quantity: cameraCount },
+      { id: crypto.randomUUID(), label: `Cámara ${prev.length + 1}`, tasks: initItems(FAULT_TASKS), photo: undefined }
+    ]);
+  };
+  const removeFaultGroup = (id: string) => setFaultGroups(prev => prev.filter(g => g.id !== id));
+  const updateFaultGroupLabel = (id: string, label: string) => setFaultGroups(prev => prev.map(g => g.id === id ? { ...g, label } : g));
+  const updateFaultGroupPhoto = (id: string, photo?: string) => setFaultGroups(prev => prev.map(g => g.id === id ? { ...g, photo } : g));
+  const patchFaultTask = (groupId: string, key: string, p: Partial<MaterialState>) => {
+    setFaultGroups(prev => prev.map(g => {
+      if (g.id !== groupId) return g;
+      return { ...g, tasks: { ...g.tasks, [key]: { ...g.tasks[key], ...p } } };
     }));
+  };
+
+  // Handlers para DVRs
+  const addDvrGroup = () => {
+    setDvrGroups(prev => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        label: `DVR / NVR ${prev.length + 1}`,
+        included: true,
+        distance: '10',
+        height: '3',
+        channels: '4',
+        photo: undefined,
+        difficulties: {
+          ...Object.fromEntries(DIFFICULTIES.map(d => [d.key, { selected: false, price: d.price }])),
+          custom: { selected: false, price: 0, text: '' },
+        },
+      }
+    ]);
+  };
+  const removeDvrGroup = (id: string) => setDvrGroups(prev => prev.filter(g => g.id !== id));
+  const updateDvrGroup = (id: string, patch: Partial<DvrGroup>) => setDvrGroups(prev => prev.map(g => g.id === id ? { ...g, ...patch } : g));
+  const updateDvrDifficulty = (id: string, key: string, patch: Partial<DifficultyState>) => {
+    setDvrGroups(prev => prev.map(g => {
+      if (g.id !== id) return g;
+      return {
+        ...g,
+        difficulties: { ...g.difficulties, [key]: { ...g.difficulties[key], ...patch } }
+      };
+    }));
+  };
+
+  // Lector de archivos
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, callback: (base64: string) => void) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => callback(reader.result as string);
+    reader.readAsDataURL(file);
   };
 
   const handleVideoCauseChange = (cause: VideoCause) => {
     setVideoCause(cause);
-    const definition = VIDEO_CAUSES.find(c => c.value === cause);
-    setVideoMaterials(prev => {
-      const next: Record<VideoMaterialKey, MaterialState> = { ...prev };
-      (Object.keys(next) as VideoMaterialKey[]).forEach(key => {
-        next[key] = { ...next[key], selected: false };
-      });
-      definition?.suggestedMaterials.forEach(key => {
-        next[key] = { ...next[key], selected: true };
-      });
-      return next;
-    });
+    const suggested = VIDEO_CAUSES.find(c => c.value === cause)?.suggested ?? [];
+    setVideoMaterials(prev => Object.fromEntries(
+      Object.entries(prev).map(([key, m]) => [key, { ...m, selected: suggested.includes(key) }]),
+    ));
   };
 
-  const videoMaterialsTotal = useMemo(
-    () => (Object.entries(videoMaterials) as [VideoMaterialKey, MaterialState][]).reduce(
-      (sum, [, mat]) => (mat.selected ? sum + mat.quantity * mat.unitPrice : sum),
-      0,
-    ),
-    [videoMaterials],
+  const videoMaterialsTotal = useMemo(() => sumSelected(videoMaterials), [videoMaterials]);
+
+  const cameraAccess = useMemo(
+    () => calcularAccesibilidadCamaras(nonNegative(data.avgDistance), nonNegative(data.avgHeight), prices),
+    [data.avgDistance, data.avgHeight, prices],
   );
 
-  const avgDistanceNum = nonNegative(data.avgDistance);
-  const avgHeightNum = nonNegative(data.avgHeight);
-  const cableDistanceNum = nonNegative(data.cableDistance);
-  const cableHeightNum = nonNegative(data.cableHeight);
+  const dvrAccessTotals = useMemo(() => {
+    return dvrGroups.map(dvr => {
+      const totalDificultades = Object.values(dvr.difficulties).reduce((sum, d) => (d.selected ? sum + d.price : sum), 0);
+      return calcularAccesibilidadDvr(
+        nonNegative(dvr.distance), nonNegative(dvr.height), nonNegative(dvr.channels), totalDificultades, prices
+      );
+    });
+  }, [dvrGroups, prices]);
+
+  const cableTotals = useMemo(() => {
+    const map: Record<string, ReturnType<typeof calcularMontoCableado>> = {};
+    faultGroups.forEach(g => {
+      map[g.id] = calcularMontoCableado(g.tasks.cableChange, cableDistance, cableHeight, prices);
+    });
+    return map;
+  }, [faultGroups, cableDistance, cableHeight, prices]);
+
+  const bundleDiscount = useMemo(() => {
+    let count = 0;
+    let laborBase = 0;
+
+    Object.values(globalTasks).forEach(t => {
+      if (t.selected) { count++; laborBase += lineTotal(t); }
+    });
+
+    faultGroups.forEach(group => {
+      Object.values(group.tasks).forEach(t => {
+        if (t.selected) { count++; laborBase += lineTotal(t); }
+      });
+    });
+
+    let totalPct = 0;
+    for (const t of BUNDLE_DISCOUNTS) if (count >= t.min) totalPct = t.pct;
+
+    return { count, laborBase, totalPct, amount: Math.round(laborBase * totalPct / 100) };
+  }, [globalTasks, faultGroups]);
 
   const maintenanceExtrasTotal = useMemo(() => {
-    const tasksTotal = (Object.entries(maintenanceTasks) as [MaintenanceTaskKey, MaterialState][])
-      .reduce((sum, [key, t]) => {
-        if (!t.selected) return sum;
-        if (key === 'cableChange') {
-          return sum + calcularMontoCableado(t, cableDistanceNum, cableHeightNum, prices).total;
-        }
-        return sum + t.quantity * t.unitPrice;
-      }, 0);
-    const mats = (Object.entries(maintenanceMaterials) as [MaintenanceMaterialKey, MaterialState][])
-      .reduce((sum, [, m]) => (m.selected ? sum + m.quantity * m.unitPrice : sum), 0);
-    return tasksTotal + mats;
-  }, [maintenanceTasks, maintenanceMaterials, cableDistanceNum, cableHeightNum, prices]);
+    let total = sumSelected(globalTasks);
 
-  const cameraAccessExcess = useMemo(
-    () => calcularExcedenteAccesibilidadCamaras(avgDistanceNum, avgHeightNum, prices),
-    [avgDistanceNum, avgHeightNum, prices],
-  );
+    faultGroups.forEach(g => {
+      Object.entries(g.tasks).forEach(([key, t]) => {
+        if (!t.selected) return;
+        if (key === 'cableChange') total += cableTotals[g.id].total;
+        else total += lineTotal(t);
+      });
+    });
 
-  const dvrAccessPreview = useMemo(
-    () => calcularAccesibilidadDvr(
-      nonNegative(data.dvrDistance),
-      nonNegative(data.dvrHeight),
-      nonNegative(data.dvrChannels),
-      data.dvrDifficulty,
-      prices,
-    ),
-    [data.dvrDistance, data.dvrHeight, data.dvrChannels, data.dvrDifficulty, prices],
-  );
+    return total + sumSelected(maintenanceMaterials) - bundleDiscount.amount;
+  }, [globalTasks, faultGroups, maintenanceMaterials, cableTotals, bundleDiscount]);
 
-  const result = useMemo<CalculationResult>(() => {
-    const cameraCount = Math.max(1, Math.floor(Number(data.cameras) || 1));
-    const travel = nonNegative(data.travel);
-    const materials = nonNegative(data.materials);
-    const extraLabor = nonNegative(data.extraLabor);
+  const result = useMemo(() => {
     const lines: ServiceLine[] = [];
     let direct = true;
     let title = 'Cotización preliminar disponible';
     let message = 'Confirme el alcance del trabajo y los valores con el cliente antes de generar la cotización.';
     let script = '';
-    let serviceAmount = 0;
 
     const addLine = (
-      id: string,
-      description: string,
-      detail: string,
-      amount: number,
-      itemType: 'service' | 'product' = 'service',
-    ) => {
-      lines.push({ id, description, detail, amount: nonNegative(amount), itemType });
+      id: string, description: string, detail: string, amount: number, itemType: 'service' | 'product' = 'service',
+    ) => lines.push({ id, description, detail, amount: nonNegative(amount), itemType });
+
+    const addDiscount = (id: string, description: string, detail: string, amount: number) => {
+      if (amount > 0) lines.push({ id, description, detail, amount: -amount, itemType: 'service' });
     };
+
+    const diagnose = (
+      t: string, m: string, s: string, line: [id: string, description: string, detail: string, amount: number],
+    ) => {
+      direct = false; title = t; message = m; script = s;
+      addLine(...line);
+    };
+
+    const addItem = (def: CatalogItem, st: MaterialState, prefix: string, type: 'service' | 'product') => {
+      const amount = lineTotal(st);
+      if (!st.selected || amount <= 0) return;
+      addLine(`${prefix}-${def.key}`, def.label, `${st.quantity} ${def.unit} × ${money(st.unitPrice)}`, amount, type);
+    };
+
+    const { device } = data;
 
     switch (selectedService) {
       case 'maintenance': {
-        // 1) Excedente de accesibilidad de cámaras (solo si >10 m o >3 m)
-        if (cameraAccessExcess.total > 0) {
-          const detailParts: string[] = [];
-          if (cameraAccessExcess.extraDistance > 0) {
-            detailParts.push(`${cameraAccessExcess.extraDistance} m dist × ${money(cameraAccessExcess.distanceRate)}/m`);
-          }
-          if (cameraAccessExcess.extraHeight > 0) {
-            detailParts.push(`${cameraAccessExcess.extraHeight} m alt × ${money(prices.pAccessHeight)}/m`);
-          }
-          addLine(
-            'camera-access-excess',
-            'Accesibilidad adicional de cámaras',
-            detailParts.join(' · ') + ' (base 10 m / 3 m incluida)',
-            cameraAccessExcess.total,
-          );
+        if (cameraAccess.total > 0) {
+          const parts: string[] = [];
+          if (cameraAccess.extraDistance > 0) parts.push(`${cameraAccess.extraDistance} m dist × ${money(cameraAccess.distanceRate)}/m`);
+          if (cameraAccess.extraHeight > 0) parts.push(`${cameraAccess.extraHeight} m alt × ${money(prices.pAccessHeight)}/m`);
+          addLine('camera-access-excess', 'Accesibilidad adicional de cámaras',
+            `${parts.join(' · ')} (base 10 m / 3 m incluida)`, cameraAccess.total);
         }
 
-        // 2) Accesibilidad DVR/NVR (opcional)
-        if (includeDvrAccess) {
-          const dvrAccess = calcularAccesibilidadDvr(
-            nonNegative(data.dvrDistance),
-            nonNegative(data.dvrHeight),
-            nonNegative(data.dvrChannels),
-            data.dvrDifficulty,
-            prices,
-          );
-          const dvrDetailParts: string[] = [
-            `${data.dvrDistance || 0} m al tomacorriente`,
-            `${data.dvrHeight || 0} m altura`,
-            `${data.dvrChannels || 0} canales`,
-          ];
-          if (dvrAccess.extraDistance > 0) dvrDetailParts.push(`+${dvrAccess.extraDistance} m dist`);
-          if (dvrAccess.extraHeight > 0) dvrDetailParts.push(`+${dvrAccess.extraHeight} m alt`);
-          if (dvrAccess.extraChannels > 0) dvrDetailParts.push(`+${dvrAccess.extraChannels} canales`);
-          dvrDetailParts.push(dvrAccess.difficultyLabel);
-          if (dvrAccess.difficultyCost > 0) dvrDetailParts.push(`+${dvrAccess.difficultyPercent}% dificultad`);
+        // Múltiples DVRs
+        dvrGroups.forEach((dvr, index) => {
+          if (!dvr.included) return;
+          const acc = dvrAccessTotals[index];
+          const parts = [`${dvr.distance || 0} m al tomacorriente`, `${dvr.height || 0} m altura`, `${dvr.channels || 0} canales`];
+          if (acc.extraDistance > 0) parts.push(`+${acc.extraDistance} m dist`);
+          if (acc.extraHeight > 0) parts.push(`+${acc.extraHeight} m alt`);
+          if (acc.extraChannels > 0) parts.push(`+${acc.extraChannels} canales`);
+          if (acc.difficultyCost > 0) parts.push('+ Dificultades físicas');
+          
+          let detail = parts.join(' · ');
+          if (dvr.photo) detail += ' | 📸 Foto adjunta';
+
           addLine(
-            'dvr-accessibility',
-            `Accesibilidad de ${data.device}`,
-            dvrDetailParts.join(' · '),
-            dvrAccess.total,
-          );
-        }
-
-        // 3) Tareas (mano de obra) — cálculo especial para cableado
-        (Object.entries(maintenanceTasks) as [MaintenanceTaskKey, MaterialState][]).forEach(([key, task]) => {
-          if (!task.selected) return;
-          const def = MAINTENANCE_TASKS.find(t => t.key === key);
-
-          if (key === 'cableChange') {
-            const cable = calcularMontoCableado(task, cableDistanceNum, cableHeightNum, prices);
-            if (cable.total <= 0) return;
-            const detailParts: string[] = [`${task.quantity} punto(s) × ${money(task.unitPrice)}`];
-            if (cable.extraDistance > 0) detailParts.push(`+${cable.extraDistance} m dist × ${money(prices.pCableDistanceRate)}/m`);
-            if (cable.extraHeight > 0) detailParts.push(`+${cable.extraHeight} m alt × ${money(prices.pCableHeightRate)}/m`);
-            addLine(
-              `maint-task-${key}`,
-              def?.label ?? key,
-              detailParts.join(' ') + ` · ${cableDistanceNum} m / ${cableHeightNum} m`,
-              cable.total,
-            );
-            return;
-          }
-
-          const amount = task.quantity * task.unitPrice;
-          if (amount <= 0) return;
-          addLine(
-            `maint-task-${key}`,
-            def?.label ?? key,
-            `${task.quantity} ${def?.unit ?? 'und'} × ${money(task.unitPrice)}`,
-            amount,
+            `dvr-accessibility-${dvr.id}`,
+            `Accesibilidad de ${dvr.label || 'Grabador'}`,
+            detail,
+            acc.total
           );
         });
 
-        // 4) Materiales
-        (Object.entries(maintenanceMaterials) as [MaintenanceMaterialKey, MaterialState][]).forEach(([key, mat]) => {
-          if (!mat.selected) return;
-          const amount = mat.quantity * mat.unitPrice;
-          if (amount <= 0) return;
-          const def = MAINTENANCE_MATERIALS.find(m => m.key === key);
-          addLine(
-            `maint-material-${key}`,
-            def?.label ?? key,
-            `${mat.quantity} ${def?.unit ?? 'und'} × ${money(mat.unitPrice)}`,
-            amount,
-            'product',
-          );
+        GLOBAL_TASKS.forEach(def => {
+          addItem(def, globalTasks[def.key], 'global-task', 'service');
         });
 
-        script = `La cotización parte de la limpieza de lentes y carcaza para las ${cameraCount} cámaras (incluye hasta 10 m de distancia y 3 m de altura). A partir de ahí se van sumando los servicios puntuales (cambio de fuente, baluns, reempalme, cableado, caja de paso, etc.) y los materiales que el técnico identifique.`;
-        break;
-      }
+        faultGroups.forEach(group => {
+          let videoLossAmount = 0;
+          const videoLossDetails: string[] = [];
 
-      case 'video': {
-        if (videoCause === 'unknown') {
-          direct = false;
-          serviceAmount = prices.pVisit;
-          title = 'Requiere diagnóstico técnico';
-          message = 'La causa no está confirmada. El valor corresponde a visita o diagnóstico, no a una reparación garantizada.';
-          script = 'Para determinar qué está ocasionando la pérdida de video, un técnico debe revisar el sistema. La reparación y los repuestos se cotizan después del diagnóstico.';
-          addLine('diagnostic-visit', 'Visita / diagnóstico técnico', 'Evaluación en sitio; reparación no incluida', serviceAmount);
-        } else {
-          const affectedMap: Record<string, { factor: number; label: string }> = {
-            '1':   { factor: 0.75, label: '1 cámara afectada' },
-            '2-4': { factor: 1,    label: '2 a 4 cámaras afectadas' },
-            '5-8': { factor: 1.5,  label: '5 a 8 cámaras afectadas' },
-            '9+':  { factor: 2,    label: 'Más de 8 cámaras afectadas' },
-          };
-          const affected = affectedMap[data.affected] ?? affectedMap['1'];
-          const causeDef = VIDEO_CAUSES.find(c => c.value === videoCause);
+          FAULT_TASKS.forEach(def => {
+            const task = group.tasks[def.key];
+            if (!task.selected) return;
 
-          serviceAmount = Math.round(prices.pPower * affected.factor);
-          addLine(
-            'video-loss',
-            'Atención por pérdida de video',
-            `${causeDef?.label ?? 'Causa identificada'} · ${affected.label}`,
-            serviceAmount,
-          );
+            const amount = def.key === 'cableChange' ? cableTotals[group.id].total : lineTotal(task);
+            videoLossAmount += amount;
 
-          (Object.entries(videoMaterials) as [VideoMaterialKey, MaterialState][]).forEach(([key, mat]) => {
-            if (!mat.selected) return;
-            const amount = mat.quantity * mat.unitPrice;
-            if (amount <= 0) return;
-            const matDef = VIDEO_MATERIALS.find(m => m.key === key);
-            addLine(
-              `material-${key}`,
-              matDef?.label ?? key,
-              `${mat.quantity} ${matDef?.unit ?? 'und'} × ${money(mat.unitPrice)}`,
-              amount,
-              'product',
-            );
+            let detailStr = `${task.quantity} ${def.unit} - ${def.label}`;
+            if (def.key === 'cableChange' && (cableTotals[group.id].extraDistance > 0 || cableTotals[group.id].extraHeight > 0)) {
+              detailStr += ` (incluye excedente)`;
+            }
+            videoLossDetails.push(detailStr);
           });
 
-          script = 'Cotizamos la atención según la causa informada y los materiales probables. Cualquier material o trabajo no descrito se aprueba con el cliente antes de ejecutarlo.';
+          if (videoLossAmount > 0) {
+            let finalDetail = videoLossDetails.join(' + ');
+            if (group.photo) finalDetail += ' | 📸 Foto adjunta';
+
+            addLine(
+              `video-loss-repair-${group.id}`,
+              `Atención integral: ${group.label.trim() || 'Cámara / Falla'}`,
+              finalDetail,
+              videoLossAmount
+            );
+          }
+        });
+
+        if (bundleDiscount.amount > 0) {
+          addDiscount(
+            'bundle-discount',
+            'Descuento por servicios combinados',
+            `${bundleDiscount.count} servicio(s) en total · ${bundleDiscount.totalPct}% sobre ${money(bundleDiscount.laborBase)}`,
+            bundleDiscount.amount,
+          );
         }
+
+        MAINTENANCE_MATERIALS.forEach(def => addItem(def, maintenanceMaterials[def.key], 'maint-material', 'product'));
+
+        script = `La cotización parte de la limpieza de lentes y carcaza para las ${cameraCount} cámaras (incluye hasta 10 m de distancia y 3 m de altura). A partir de ahí se suman las reparaciones específicas agrupadas por cámara y los materiales que el técnico identifique.${bundleDiscount.amount > 0 ? ` Se aplicó un descuento del ${bundleDiscount.totalPct}% sobre la mano de obra por combinar ${bundleDiscount.count} servicios.` : ''}`;
         break;
       }
-
+      case 'video': {
+        if (videoCause === 'unknown') {
+          diagnose(
+            'Requiere diagnóstico técnico',
+            'La causa no está confirmada. El valor corresponde a visita o diagnóstico, no a una reparación garantizada.',
+            'Para determinar qué está ocasionando la pérdida de video, un técnico debe revisar el sistema. La reparación y los repuestos se cotizan después del diagnóstico.',
+            ['diagnostic-visit', 'Visita / diagnóstico técnico', 'Evaluación en sitio; reparación no incluida', prices.pVisit],
+          );
+          break;
+        }
+        const affected = AFFECTED[data.affected] ?? AFFECTED['1'];
+        const causeLabel = VIDEO_CAUSES.find(c => c.value === videoCause)?.label ?? 'Causa identificada';
+        addLine('video-loss', 'Atención por pérdida de video', `${causeLabel} · ${affected.label}`, Math.round(prices.pPower * affected.factor));
+        VIDEO_MATERIALS.forEach(def => addItem(def, videoMaterials[def.key], 'material', 'product'));
+        script = 'Cotizamos la atención según la causa informada y los materiales probables. Cualquier material o trabajo no descrito se aprueba con el cliente antes de ejecutarlo.';
+        break;
+      }
       case 'reset':
-        serviceAmount = prices.pReset;
-        addLine('reset', `Reseteo de ${data.device}`, 'Sujeto al procedimiento compatible con el fabricante', serviceAmount);
+        addLine('reset', `Reseteo de ${device}`, 'Sujeto al procedimiento compatible con el fabricante', prices.pReset);
         script = 'El valor corresponde al procedimiento de reseteo. Si el fabricante requiere un proceso especial o una visita adicional, se informa antes de continuar.';
         break;
-
       case 'configuration':
-        serviceAmount = prices.pConfiguration;
-        addLine('configuration', `Configuración de ${data.device}`, 'No incluye repuestos ni ampliaciones de cableado', serviceAmount);
+        addLine('configuration', `Configuración de ${device}`, 'No incluye repuestos ni ampliaciones de cableado', prices.pConfiguration);
         script = 'Podemos realizar la configuración del grabador. El valor no incluye repuestos ni trabajos adicionales no descritos.';
         break;
-
       case 'remote':
-      case 'app': {
+      case 'app':
         if (data.internet !== 'yes') {
-          direct = false;
-          serviceAmount = prices.pVisit;
-          title = 'Validar conexión antes de cotizar';
-          message = 'No se ha confirmado que exista una conexión a internet funcional. El valor mostrado corresponde a visita o diagnóstico.';
-          script = 'Para configurar el acceso remoto o vincular la aplicación, primero debemos verificar la conexión, la compatibilidad del equipo y los permisos necesarios.';
-          addLine('connectivity-visit', 'Visita / diagnóstico de conectividad', 'Configuración final no garantizada', serviceAmount);
+          diagnose(
+            'Validar conexión antes de cotizar',
+            'No se ha confirmado que exista una conexión a internet funcional. El valor mostrado corresponde a visita o diagnóstico.',
+            'Para configurar el acceso remoto o vincular la aplicación, primero debemos verificar la conexión, la compatibilidad del equipo y los permisos necesarios.',
+            ['connectivity-visit', 'Visita / diagnóstico de conectividad', 'Configuración final no garantizada', prices.pVisit],
+          );
         } else {
-          serviceAmount = selectedService === 'remote' ? prices.pRemote : prices.pApp;
-          const description = selectedService === 'remote' ? 'Configuración de acceso remoto' : 'Configuración de aplicación';
-          addLine('app-setup', description, `Equipo: ${data.device}; requiere compatibilidad e internet`, serviceAmount);
+          const isRemote = selectedService === 'remote';
+          addLine(
+            'app-setup',
+            isRemote ? 'Configuración de acceso remoto' : 'Configuración de aplicación',
+            `Equipo: ${device}; requiere compatibilidad e internet`,
+            isRemote ? prices.pRemote : prices.pApp,
+          );
           script = 'Podemos realizar la configuración si el equipo es compatible, hay internet y se cuenta con los accesos necesarios.';
         }
         break;
-      }
-
       case 'password':
-        serviceAmount = prices.pPassword;
-        addLine('password', 'Cambio / recuperación de contraseña', `Equipo: ${data.device}; sujeto al método del fabricante`, serviceAmount);
+        addLine('password', 'Cambio / recuperación de contraseña', `Equipo: ${device}; sujeto al método del fabricante`, prices.pPassword);
         script = 'El procedimiento depende de la marca, el modelo y la validación de propiedad del equipo. No se garantiza el restablecimiento hasta confirmar el método disponible.';
         break;
-
       case 'recording':
         if (data.knownCause !== 'yes') {
-          direct = false;
-          serviceAmount = prices.pVisit;
-          title = 'Requiere diagnóstico técnico';
-          message = 'No está confirmada la causa del problema de grabación. El diagnóstico no incluye reparación ni disco duro.';
-          script = 'Debemos revisar la configuración, el almacenamiento y el estado del equipo para identificar la causa. Los repuestos se cotizan aparte.';
-          addLine('recording-diagnostic', 'Visita / diagnóstico de grabación', 'Revisión en sitio; repuestos no incluidos', serviceAmount);
+          diagnose(
+            'Requiere diagnóstico técnico',
+            'No está confirmada la causa del problema de grabación. El diagnóstico no incluye reparación ni disco duro.',
+            'Debemos revisar la configuración, el almacenamiento y el estado del equipo para identificar la causa. Los repuestos se cotizan aparte.',
+            ['recording-diagnostic', 'Visita / diagnóstico de grabación', 'Revisión en sitio; repuestos no incluidos', prices.pVisit],
+          );
         } else {
-          serviceAmount = prices.pRecording;
-          addLine('recording-review', 'Revisión de grabaciones', `Equipo: ${data.device}`, serviceAmount);
+          addLine('recording-review', 'Revisión de grabaciones', `Equipo: ${device}`, prices.pRecording);
           script = 'Atenderemos la revisión indicada. Si se identifica un daño de hardware, se informa y se cotiza antes de cambiar piezas.';
         }
         break;
-
       case 'power':
         if (data.knownCause !== 'yes') {
-          direct = false;
-          serviceAmount = prices.pVisit;
-          title = 'Requiere diagnóstico técnico';
-          message = 'No se ha confirmado si la falla corresponde a la fuente, el cableado, los conectores o el equipo.';
-          script = 'Un técnico debe revisar la alimentación y las conexiones. Cualquier material o reparación adicional se informa antes de realizarse.';
-          addLine('power-diagnostic', 'Visita / diagnóstico de alimentación', 'Repuestos y reparación no incluidos', serviceAmount);
+          diagnose(
+            'Requiere diagnóstico técnico',
+            'No se ha confirmado si la falla corresponde a la fuente, el cableado, los conectores o el equipo.',
+            'Un técnico debe revisar la alimentación y las conexiones. Cualquier material o reparación adicional se informa antes de realizarse.',
+            ['power-diagnostic', 'Visita / diagnóstico de alimentación', 'Repuestos y reparación no incluidos', prices.pVisit],
+          );
         } else {
-          serviceAmount = prices.pPower;
-          addLine('power-review', 'Revisión de alimentación', 'Fuente, conexiones y cableado accesible', serviceAmount);
+          addLine('power-review', 'Revisión de alimentación', 'Fuente, conexiones y cableado accesible', prices.pPower);
           script = 'Atenderemos la revisión indicada. Los materiales o repuestos adicionales se cotizan por separado si son necesarios.';
         }
         break;
-
       case 'other':
-        direct = false;
-        serviceAmount = prices.pOther;
-        title = 'Requiere evaluación técnica';
-        message = 'El servicio no está parametrizado. El precio mostrado es una referencia de evaluación, no una cotización de reparación.';
-        addLine('other-evaluation', 'Evaluación de servicio personalizado', data.otherText.trim() || 'Descripción pendiente del cliente', serviceAmount);
-        script = 'Cuéntenos qué está ocurriendo. Validaremos el alcance y coordinaremos una evaluación antes de confirmar el precio final.';
+        diagnose(
+          'Requiere evaluación técnica',
+          'El servicio no está parametrizado. El precio mostrado es una referencia de evaluación, no una cotización de reparación.',
+          'Cuéntenos qué está ocurriendo. Validaremos el alcance y coordinaremos una evaluación antes de confirmar el precio final.',
+          ['other-evaluation', 'Evaluación de servicio personalizado', data.otherText.trim() || 'Descripción pendiente del cliente', prices.pOther],
+        );
         break;
     }
 
+    const travel = nonNegative(data.travel);
+    const materials = nonNegative(data.materials);
+    const extraLabor = nonNegative(data.extraLabor);
     if (travel > 0) addLine('travel', 'Desplazamiento', 'Cargo adicional', travel);
     if (materials > 0) addLine('materials', 'Otros materiales / repuestos', 'Valor ingresado manualmente', materials, 'product');
     if (extraLabor > 0) addLine('extra-labor', 'Mano de obra adicional', 'Cargo adicional', extraLabor);
 
-    return {
-      direct,
-      title,
-      message,
-      script,
-      lines,
-      subtotal: lines.reduce((sum, line) => sum + line.amount, 0),
-    };
+    return { direct, title, message, script, lines, subtotal: lines.reduce((sum, l) => sum + l.amount, 0) };
   }, [
-    data, prices, selectedService,
-    videoCause, videoMaterials,
-    maintenanceTasks, maintenanceMaterials,
-    includeDvrAccess, cameraAccessExcess,
-    avgDistanceNum, avgHeightNum,
-    cableDistanceNum, cableHeightNum,
+    data, prices, selectedService, videoCause, videoMaterials, globalTasks, faultGroups, maintenanceMaterials,
+    dvrGroups, dvrAccessTotals, cameraAccess, cableTotals, cameraCount, cableDistance, cableHeight, bundleDiscount,
   ]);
 
-  const estimatedTax = Math.round(result.subtotal * 0.19);
+  const estimatedTax = Math.round(result.subtotal * IVA);
   const estimatedTotal = result.subtotal + estimatedTax;
+  const otherNote = selectedService === 'other' ? data.otherText.trim() : '';
 
   const handleAddToQuote = () => {
     if (!result.lines.length) return;
-    const items: QuoteItem[] = result.lines.map(line => ({
-      item_type: line.itemType === 'product' ? 'product' : 'service',
-      description: `${line.description}${line.detail ? ` — ${line.detail}` : ''}${selectedService === 'other' && data.otherText.trim() ? ` | Solicitud: ${data.otherText.trim()}` : ''}`,
+    onAddItems(result.lines.map(line => ({
+      item_type: line.itemType,
+      description: `${line.description}${line.detail ? ` — ${line.detail}` : ''}${otherNote ? ` | Solicitud: ${otherNote}` : ''}`,
       quantity: 1,
-      unit_price: Math.round(line.amount),
-      discount: 0,
+      unit_price: line.amount < 0 ? 0 : Math.round(line.amount),
+      discount: line.amount < 0 ? Math.abs(Math.round(line.amount)) : 0,
       tax_rate: 19,
-    }));
-    onAddItems(items);
+    })));
     onHide();
   };
 
   const copyQuote = async () => {
-    const quoteText = [
+    const text = [
       'COTIZACIÓN PRELIMINAR S24 — SERVICIOS CCTV',
-      `Servicio: ${SERVICE_NAMES[selectedService]}`,
+      `Servicio: ${SERVICES[selectedService].name}`,
       `Resultado: ${result.title}`,
-      ...(selectedService === 'other' && data.otherText.trim() ? [`Descripción: ${data.otherText.trim()}`] : []),
+      ...(otherNote ? [`Descripción: ${otherNote}`] : []),
       '',
-      ...result.lines.map(line => `${line.description} (${line.detail}): ${money(line.amount)}`),
+      ...result.lines.map(l => `${l.description} (${l.detail}): ${money(l.amount)}`),
       '',
       `Subtotal: ${money(result.subtotal)}`,
       `IVA estimado (19%): ${money(estimatedTax)}`,
@@ -794,18 +798,20 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
     ].join('\n');
 
     try {
-      await navigator.clipboard.writeText(quoteText);
+      await navigator.clipboard.writeText(text);
       window.alert('Cotización copiada al portapapeles.');
     } catch {
       window.alert('No fue posible copiar automáticamente. Verifica los permisos del navegador.');
     }
   };
 
-  const requiresCameraCount = selectedService === 'maintenance';
-  const showsAccessibility = selectedService === 'maintenance';
-  const showsDevice = ['maintenance', 'reset', 'configuration', 'remote', 'app', 'password', 'recording'].includes(selectedService);
-  const showsCause = ['power', 'recording'].includes(selectedService);
-  const showsInternet = ['remote', 'app'].includes(selectedService);
+  const isMaintenance = selectedService === 'maintenance';
+  const isVideo = selectedService === 'video';
+
+  const cameraAccessRows: [string, number][] = [
+    [cameraAccess.extraDistance > 0 ? `${cameraAccess.extraDistance} m distancia × ${money(cameraAccess.distanceRate)}/m` : 'Sin excedente de distancia', cameraAccess.distanceCost],
+    [cameraAccess.extraHeight > 0 ? `${cameraAccess.extraHeight} m altura × ${money(prices.pAccessHeight)}/m` : 'Sin excedente de altura', cameraAccess.heightCost],
+  ];
 
   return (
     <Modal show={show} onHide={onHide} size="xl" centered scrollable dialogClassName="s24-service-calculator-modal">
@@ -827,19 +833,14 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
 
         <Row className="g-4">
           <Col lg={7}>
-            {/* ---------- PASO 1 ---------- */}
             <Card className="border-0 shadow-sm mb-3">
               <Card.Header className="bg-white border-bottom d-flex justify-content-between align-items-center py-3">
-                <div className="d-flex align-items-center gap-2">
-                  <span className="rounded-circle bg-primary text-white px-2 py-1 small fw-bold">1</span>
-                  <strong>Seleccione el servicio</strong>
-                </div>
+                <Step n={1}><strong>Seleccione el servicio</strong></Step>
                 <Badge bg="light" text="dark">{Object.keys(SERVICES).length} opciones</Badge>
               </Card.Header>
               <Card.Body>
                 <Row className="g-2">
-                  {(Object.entries(SERVICES) as [ServiceKey, ServiceDefinition][]).map(([key, service]) => {
-                    const Icon = service.icon;
+                  {(Object.entries(SERVICES) as [ServiceKey, (typeof SERVICES)[ServiceKey]][]).map(([key, { icon: Icon, label, description }]) => {
                     const active = selectedService === key;
                     return (
                       <Col sm={6} key={key}>
@@ -853,8 +854,8 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
                             <Icon size={20} className={active ? 'text-primary' : 'text-secondary'} />
                             {active && <CheckCircle2 size={16} className="ms-auto text-primary" />}
                           </div>
-                          <div className={`fw-semibold small ${active ? 'text-primary' : 'text-dark'}`}>{service.label}</div>
-                          <div className="small text-muted mt-1">{service.description}</div>
+                          <div className={`fw-semibold small ${active ? 'text-primary' : 'text-dark'}`}>{label}</div>
+                          <div className="small text-muted mt-1">{description}</div>
                         </button>
                       </Col>
                     );
@@ -863,606 +864,396 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
               </Card.Body>
             </Card>
 
-            {/* ---------- PASO 2 ---------- */}
             <Card className="border-0 shadow-sm mb-3">
               <Card.Header className="bg-white border-bottom py-3">
-                <div className="d-flex align-items-center gap-2">
-                  <span className="rounded-circle bg-primary text-white px-2 py-1 small fw-bold">2</span>
-                  <strong>Datos del servicio</strong>
-                </div>
+                <Step n={2}><strong>Datos del servicio</strong></Step>
               </Card.Header>
               <Card.Body>
                 <Row className="g-3">
-                  {requiresCameraCount && (
+                  {isMaintenance && (
                     <Col md={6}>
-                      <Form.Group controlId="service-camera-count">
-                        <Form.Label className="small fw-semibold">Cantidad de cámaras</Form.Label>
-                        <InputGroup>
-                          <Form.Control type="number" min={1} step={1} value={data.cameras} onChange={e => updateField('cameras', e.target.value)} />
-                          <InputGroup.Text>cámaras</InputGroup.Text>
-                        </InputGroup>
-                      </Form.Group>
+                      <NumField id="service-camera-count" label="Cantidad de cámaras" min={1} unit="cámaras" {...bind('cameras')} />
                     </Col>
                   )}
 
-                  {showsDevice && (
+                  {DEVICE_SERVICES.includes(selectedService) && (
                     <Col md={6}>
-                      <Form.Group controlId="service-device">
-                        <Form.Label className="small fw-semibold">Equipo principal</Form.Label>
-                        <Form.Select value={data.device} onChange={e => updateField('device', e.target.value)}>
-                          <option>DVR</option>
-                          <option>NVR</option>
-                          <option>DVR + NVR</option>
-                          <option>No sabe</option>
-                        </Form.Select>
-                      </Form.Group>
+                      <SelectField id="service-device" label="Equipo principal" options={opts('DVR', 'NVR', 'DVR + NVR', 'No sabe')} {...bind('device')} />
                     </Col>
                   )}
 
-                  {showsCause && (
+                  {CAUSE_SERVICES.includes(selectedService) && (
                     <Col md={6}>
-                      <Form.Group controlId="service-known-cause">
-                        <Form.Label className="small fw-semibold">¿La causa está identificada?</Form.Label>
-                        <Form.Select value={data.knownCause} onChange={e => updateField('knownCause', e.target.value)}>
-                          <option value="yes">Sí, está identificada</option>
-                          <option value="no">No / no se sabe</option>
-                        </Form.Select>
-                      </Form.Group>
+                      <SelectField id="service-known-cause" label="¿La causa está identificada?"
+                        options={[['yes', 'Sí, está identificada'], ['no', 'No / no se sabe']]} {...bind('knownCause')} />
                     </Col>
                   )}
 
-                  {/* ---- MANTENIMIENTO: accesibilidad de cámaras ---- */}
-                  {showsAccessibility && (
+                  {isMaintenance && (
                     <Col xs={12}>
-                      <div className="border rounded-3 p-3 bg-light">
-                        <div className="d-flex justify-content-between align-items-center mb-2">
-                          <div>
-                            <div className="fw-semibold small">
-                              <Ruler size={14} className="me-1" />
-                              Accesibilidad de cámaras
-                            </div>
-                            <div className="text-muted small">
-                              Base incluida: hasta <strong>10 m</strong> de distancia y <strong>3 m</strong> de altura.
-                              Si se excede, se cobra solo el excedente.
-                            </div>
-                          </div>
-                          {cameraAccessExcess.total > 0 ? (
-                            <Badge bg="warning" text="dark">{money(cameraAccessExcess.total)} excedente</Badge>
-                          ) : (
-                            <Badge bg="success" text="dark">Dentro de base</Badge>
-                          )}
-                        </div>
-
+                      <Panel>
+                        <PanelHeader
+                          title={<><Ruler size={14} className="me-1" />Accesibilidad de cámaras</>}
+                          hint={<>Base incluida: hasta <strong>10 m</strong> de distancia y <strong>3 m</strong> de altura. Si se excede, se cobra solo el excedente.</>}
+                          badge={cameraAccess.total > 0
+                            ? <Badge bg="warning" text="dark">{money(cameraAccess.total)} excedente</Badge>
+                            : <Badge bg="success" text="dark">Dentro de base</Badge>}
+                        />
                         <Row className="g-2 mt-1">
                           <Col md={6}>
-                            <Form.Group controlId="service-avg-distance">
-                              <Form.Label className="small fw-semibold">
-                                <MapPin size={14} className="me-1" />
-                                Distancia promedio al grabador / energía
-                              </Form.Label>
-                              <InputGroup size="sm">
-                                <Form.Control
-                                  type="number"
-                                  min={0}
-                                  step={1}
-                                  value={data.avgDistance}
-                                  onChange={e => updateField('avgDistance', e.target.value)}
-                                />
-                                <InputGroup.Text>m</InputGroup.Text>
-                              </InputGroup>
-                            </Form.Group>
+                            <NumField id="service-avg-distance" size="sm" icon={MapPin} unit="m"
+                              label="Distancia promedio al grabador / energía" {...bind('avgDistance')} />
                           </Col>
-
                           <Col md={6}>
-                            <Form.Group controlId="service-avg-height">
-                              <Form.Label className="small fw-semibold">
-                                <ArrowUp size={14} className="me-1" />
-                                Altura promedio de instalación
-                              </Form.Label>
-                              <InputGroup size="sm">
-                                <Form.Control
-                                  type="number"
-                                  min={0}
-                                  step={1}
-                                  value={data.avgHeight}
-                                  onChange={e => updateField('avgHeight', e.target.value)}
-                                />
-                                <InputGroup.Text>m</InputGroup.Text>
-                              </InputGroup>
-                            </Form.Group>
+                            <NumField id="service-avg-height" size="sm" icon={ArrowUp} unit="m"
+                              label="Altura promedio de instalación" {...bind('avgHeight')} />
                           </Col>
                         </Row>
-
-                        {cameraAccessExcess.total > 0 && (
-                          <div className="small text-muted mt-2" style={{ lineHeight: 1.4 }}>
-                            <div className="d-flex justify-content-between">
-                              <span>
-                                {cameraAccessExcess.extraDistance > 0
-                                  ? `${cameraAccessExcess.extraDistance} m distancia × ${money(cameraAccessExcess.distanceRate)}/m`
-                                  : 'Sin excedente de distancia'}
-                              </span>
-                              <span>{money(cameraAccessExcess.distanceCost)}</span>
-                            </div>
-                            <div className="d-flex justify-content-between">
-                              <span>
-                                {cameraAccessExcess.extraHeight > 0
-                                  ? `${cameraAccessExcess.extraHeight} m altura × ${money(prices.pAccessHeight)}/m`
-                                  : 'Sin excedente de altura'}
-                              </span>
-                              <span>{money(cameraAccessExcess.heightCost)}</span>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                        {cameraAccess.total > 0 && <Breakdown rows={cameraAccessRows} />}
+                      </Panel>
                     </Col>
                   )}
 
-                  {/* ---- MANTENIMIENTO: accesibilidad DVR ---- */}
-                  {showsAccessibility && (
+                  {/* --- SECCIÓN DE MÚLTIPLES DVRs --- */}
+                  {isMaintenance && (
                     <Col xs={12}>
-                      <div className="border rounded-3 p-3 bg-light">
-                        <div className="d-flex justify-content-between align-items-center">
-                          <Form.Check
-                            id="include-dvr-access"
-                            type="checkbox"
-                            checked={includeDvrAccess}
-                            onChange={e => setIncludeDvrAccess(e.target.checked)}
-                            label={
-                              <span className="fw-semibold small">
-                                <Zap size={14} className="me-1" />
-                                Incluir accesibilidad del DVR/NVR (base {money(prices.pDvrAccessBase)})
-                              </span>
-                            }
-                          />
-                          {includeDvrAccess && (
-                            <Badge bg="info" text="dark">{money(dvrAccessPreview.total)}</Badge>
-                          )}
-                        </div>
-
-                        {includeDvrAccess ? (
-                          <>
-                            <div className="text-muted small mt-1 mb-2">
-                              Base: 0–10 m al tomacorriente, 0–3 m de altura y hasta 4 canales de video.
-                              Cada canal adicional se cobra a {money(prices.pDvrExtraChannel)}. La dificultad aplica un recargo.
-                            </div>
-
-                            <Row className="g-2 mt-1">
-                              <Col md={3}>
-                                <Form.Group controlId="service-dvr-distance">
-                                  <Form.Label className="small fw-semibold">
-                                    <MapPin size={14} className="me-1" />
-                                    Dist. al tomacorriente
-                                  </Form.Label>
-                                  <InputGroup size="sm">
-                                    <Form.Control
-                                      type="number"
-                                      min={0}
-                                      step={1}
-                                      value={data.dvrDistance}
-                                      onChange={e => updateField('dvrDistance', e.target.value)}
-                                    />
-                                    <InputGroup.Text>m</InputGroup.Text>
-                                  </InputGroup>
-                                </Form.Group>
-                              </Col>
-
-                              <Col md={3}>
-                                <Form.Group controlId="service-dvr-height">
-                                  <Form.Label className="small fw-semibold">
-                                    <ArrowUp size={14} className="me-1" />
-                                    Altura DVR/NVR
-                                  </Form.Label>
-                                  <InputGroup size="sm">
-                                    <Form.Control
-                                      type="number"
-                                      min={0}
-                                      step={1}
-                                      value={data.dvrHeight}
-                                      onChange={e => updateField('dvrHeight', e.target.value)}
-                                    />
-                                    <InputGroup.Text>m</InputGroup.Text>
-                                  </InputGroup>
-                                </Form.Group>
-                              </Col>
-
-                              <Col md={3}>
-                                <Form.Group controlId="service-dvr-channels">
-                                  <Form.Label className="small fw-semibold">
-                                    <Video size={14} className="me-1" />
-                                    Canales ocupados
-                                  </Form.Label>
-                                  <InputGroup size="sm">
-                                    <Form.Control
-                                      type="number"
-                                      min={0}
-                                      step={1}
-                                      value={data.dvrChannels}
-                                      onChange={e => updateField('dvrChannels', e.target.value)}
-                                    />
-                                    <InputGroup.Text>canales</InputGroup.Text>
-                                  </InputGroup>
-                                </Form.Group>
-                              </Col>
-
-                              <Col md={3}>
-                                <Form.Group controlId="service-dvr-difficulty">
-                                  <Form.Label className="small fw-semibold">
-                                    <Info size={14} className="me-1" />
-                                    Dificultad
-                                  </Form.Label>
-                                  <Form.Select
-                                    size="sm"
-                                    value={data.dvrDifficulty}
-                                    onChange={e => updateField('dvrDifficulty', e.target.value)}
-                                  >
-                                    <option value="easy">Fácil acceso</option>
-                                    <option value="difficult">
-                                      Difícil (+{prices.pDvrDifficultySurcharge}%)
-                                    </option>
-                                  </Form.Select>
-                                </Form.Group>
-                              </Col>
-                            </Row>
-
-                            <div className="small text-muted mt-2" style={{ lineHeight: 1.4 }}>
-                              <div className="d-flex justify-content-between">
-                                <span>Base (0–10 m / 0–3 m / 0–4 canales)</span>
-                                <span>{money(dvrAccessPreview.base)}</span>
-                              </div>
-                              <div className="d-flex justify-content-between">
-                                <span>
-                                  {dvrAccessPreview.extraDistance > 0
-                                    ? `${dvrAccessPreview.extraDistance} m distancia × ${money(prices.pDvrAccessDistance)}/m`
-                                    : 'Sin metros de distancia adicionales'}
-                                </span>
-                                <span>{money(dvrAccessPreview.distanceCost)}</span>
-                              </div>
-                              <div className="d-flex justify-content-between">
-                                <span>
-                                  {dvrAccessPreview.extraHeight > 0
-                                    ? `${dvrAccessPreview.extraHeight} m altura × ${money(prices.pDvrAccessHeight)}/m`
-                                    : 'Sin metros de altura adicionales'}
-                                </span>
-                                <span>{money(dvrAccessPreview.heightCost)}</span>
-                              </div>
-                              <div className="d-flex justify-content-between">
-                                <span>
-                                  {dvrAccessPreview.extraChannels > 0
-                                    ? `${dvrAccessPreview.extraChannels} canal(es) extra × ${money(prices.pDvrExtraChannel)}`
-                                    : 'Sin canales adicionales (4 incluidos)'}
-                                </span>
-                                <span>{money(dvrAccessPreview.channelCost)}</span>
-                              </div>
-                              <div className="d-flex justify-content-between">
-                                <span>
-                                  Dificultad ({dvrAccessPreview.difficultyLabel}
-                                  {dvrAccessPreview.difficultyPercent > 0 ? ` · ${dvrAccessPreview.difficultyPercent}%` : ''})
-                                </span>
-                                <span>{money(dvrAccessPreview.difficultyCost)}</span>
-                              </div>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="small text-muted mt-1">
-                            Marque esta casilla si el trabajo requiere cobrar accesibilidad del grabador.
-                          </div>
-                        )}
-                      </div>
-                    </Col>
-                  )}
-
-                  {/* ---- MANTENIMIENTO: tareas ---- */}
-                  {selectedService === 'maintenance' && (
-                    <Col xs={12}>
-                      <div className="border rounded-3 p-3 bg-light mb-3">
-                        <div className="d-flex justify-content-between align-items-center mb-2">
+                      <Panel className="mb-3">
+                        <div className="d-flex justify-content-between align-items-center mb-3">
                           <div>
-                            <div className="fw-semibold small">Tareas de mantenimiento (mano de obra)</div>
-                            <div className="text-muted small">
-                              Base marcada: <strong>Limpieza de lentes y carcaza</strong> ({data.cameras} cámaras).
-                              Cambio de fuente / baluns / reempalme: <strong>{money(45000)}</strong>.
-                              Cambio de cableado: <strong>{money(50000)}</strong> por punto (10 m / 3 m incluidos) + {money(prices.pCableDistanceRate)}/m dist + {money(prices.pCableHeightRate)}/m alt.
-                            </div>
+                            <h6 className="fw-bold mb-1"><Zap size={16} className="me-1" /> Accesibilidad de Grabadores (DVR/NVR)</h6>
+                            <div className="text-muted small">Agregue los grabadores que requieran cobro por accesibilidad.</div>
                           </div>
-                          <Badge bg="info" text="dark">{money(maintenanceExtrasTotal)}</Badge>
+                          <Button variant="outline-primary" size="sm" onClick={addDvrGroup}>
+                            <PlusCircle size={14} className="me-1" /> Añadir otro grabador
+                          </Button>
                         </div>
 
-                        {MAINTENANCE_TASKS.map(task => {
-                          const state = maintenanceTasks[task.key];
-                          const cable = task.key === 'cableChange'
-                            ? calcularMontoCableado(state, cableDistanceNum, cableHeightNum, prices)
-                            : null;
-                          const total = cable ? cable.total : state.quantity * state.unitPrice;
+                        {dvrGroups.map((dvr, index) => {
+                          const acc = dvrAccessTotals[index];
                           return (
-                            <div key={task.key} className="border-top pt-2">
-                              <div className="d-flex flex-wrap align-items-center gap-2 py-1">
-                                <Form.Check
-                                  type="checkbox"
-                                  className="me-2"
-                                  checked={state.selected}
-                                  onChange={e => setMaintenanceTasks(prev => ({
-                                    ...prev,
-                                    [task.key]: { ...prev[task.key], selected: e.target.checked },
-                                  }))}
-                                  label={<span className="small fw-semibold">{task.label}</span>}
-                                  style={{ minWidth: 260 }}
-                                />
-                                <Form.Control
-                                  type="number"
-                                  min={1}
-                                  size="sm"
-                                  value={state.quantity}
-                                  disabled={!state.selected}
-                                  onChange={e => setMaintenanceTasks(prev => ({
-                                    ...prev,
-                                    [task.key]: { ...prev[task.key], quantity: Math.max(1, nonNegative(e.target.value)) },
-                                  }))}
-                                  style={{ maxWidth: 80 }}
-                                />
-                                <span className="small text-muted">{task.unit}</span>
-                                {task.perCamera && (
-                                  <Button
-                                    variant="link"
-                                    size="sm"
-                                    className="p-0 small text-decoration-none"
-                                    disabled={!state.selected}
-                                    onClick={() => syncTaskQuantityToCameras(task.key)}
-                                  >
-                                    usar {data.cameras} cámaras
-                                  </Button>
-                                )}
-                                <InputGroup size="sm" style={{ maxWidth: 160 }}>
-                                  <InputGroup.Text>$</InputGroup.Text>
-                                  <Form.Control
-                                    type="number"
-                                    min={0}
-                                    value={state.unitPrice}
-                                    disabled={!state.selected}
-                                    onChange={e => setMaintenanceTasks(prev => ({
-                                      ...prev,
-                                      [task.key]: { ...prev[task.key], unitPrice: nonNegative(e.target.value) },
-                                    }))}
-                                  />
-                                </InputGroup>
-                                <span className="small fw-semibold ms-auto">{money(total)}</span>
-                              </div>
-
-                              {/* Sub-panel específico de cableado: metros por punto */}
-                              {task.key === 'cableChange' && state.selected && (
-                                <div className="ms-4 mt-2 mb-2 p-2 rounded-3 bg-white border">
-                                  <div className="small fw-semibold mb-2">
-                                    <Ruler size={13} className="me-1" />
-                                    Metros del cableado (por punto)
+                            <Card key={dvr.id} className="mb-3 border-0 shadow-sm">
+                              <Card.Body className="bg-white rounded-3 border">
+                                <div className="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
+                                  <div className="d-flex align-items-center gap-2">
+                                    <Form.Check
+                                      type="checkbox"
+                                      checked={dvr.included}
+                                      onChange={e => updateDvrGroup(dvr.id, { included: e.target.checked })}
+                                      label={<span className="fw-semibold small text-primary">Incluir accesibilidad</span>}
+                                    />
+                                    <Form.Control
+                                      size="sm"
+                                      style={{ maxWidth: 200 }}
+                                      value={dvr.label}
+                                      onChange={e => updateDvrGroup(dvr.id, { label: e.target.value })}
+                                      placeholder="Ej: DVR Principal"
+                                      disabled={!dvr.included}
+                                    />
                                   </div>
-                                  <Row className="g-2">
-                                    <Col sm={6}>
-                                      <Form.Group controlId="service-cable-distance">
-                                        <Form.Label className="small fw-semibold mb-0">
-                                          <MapPin size={12} className="me-1" />
-                                          Distancia al grabador / energía
-                                        </Form.Label>
-                                        <InputGroup size="sm">
-                                          <Form.Control
-                                            type="number"
-                                            min={0}
-                                            step={1}
-                                            value={data.cableDistance}
-                                            onChange={e => updateField('cableDistance', e.target.value)}
-                                          />
-                                          <InputGroup.Text>m</InputGroup.Text>
-                                        </InputGroup>
-                                      </Form.Group>
-                                    </Col>
-                                    <Col sm={6}>
-                                      <Form.Group controlId="service-cable-height">
-                                        <Form.Label className="small fw-semibold mb-0">
-                                          <ArrowUp size={12} className="me-1" />
-                                          Altura de instalación
-                                        </Form.Label>
-                                        <InputGroup size="sm">
-                                          <Form.Control
-                                            type="number"
-                                            min={0}
-                                            step={1}
-                                            value={data.cableHeight}
-                                            onChange={e => updateField('cableHeight', e.target.value)}
-                                          />
-                                          <InputGroup.Text>m</InputGroup.Text>
-                                        </InputGroup>
-                                      </Form.Group>
-                                    </Col>
-                                  </Row>
-                                  <div className="small text-muted mt-2" style={{ lineHeight: 1.4 }}>
-                                    <div className="d-flex justify-content-between">
-                                      <span>Base incluida (10 m / 3 m)</span>
-                                      <span>{money(state.unitPrice)} × {state.quantity} punto(s)</span>
-                                    </div>
-                                    {cable && cable.extraDistance > 0 && (
-                                      <div className="d-flex justify-content-between">
-                                        <span>{cable.extraDistance} m dist extra × {money(prices.pCableDistanceRate)}/m × {state.quantity} punto(s)</span>
-                                        <span>{money(cable.distanceExcess)}</span>
-                                      </div>
+                                  <div className="d-flex align-items-center gap-2">
+                                    {dvr.included && <Badge bg="info" text="dark">{money(acc.total)}</Badge>}
+                                    {dvrGroups.length > 1 && (
+                                      <Button variant="outline-danger" size="sm" onClick={() => removeDvrGroup(dvr.id)}>
+                                        <Trash2 size={14} />
+                                      </Button>
                                     )}
-                                    {cable && cable.extraHeight > 0 && (
-                                      <div className="d-flex justify-content-between">
-                                        <span>{cable.extraHeight} m alt extra × {money(prices.pCableHeightRate)}/m × {state.quantity} punto(s)</span>
-                                        <span>{money(cable.heightExcess)}</span>
-                                      </div>
-                                    )}
-                                    <div className="d-flex justify-content-between border-top pt-1 mt-1">
-                                      <strong>Subtotal cableado</strong>
-                                      <strong>{money(cable?.total ?? 0)}</strong>
-                                    </div>
                                   </div>
                                 </div>
+
+                                {dvr.included && (
+                                  <>
+                                    <div className="text-muted small mt-1 mb-2">
+                                      Base: 0–10 m al tomacorriente, 0–3 m de altura y hasta 4 canales de video.
+                                      Cada canal adicional se cobra a {money(prices.pDvrExtraChannel)}.
+                                    </div>
+
+                                    <Row className="g-2 mt-1">
+                                      <Col md={4}>
+                                        <NumField id={`dvr-dist-${dvr.id}`} size="sm" icon={MapPin} unit="m" label="Dist. al tomacorriente"
+                                          value={dvr.distance} onChange={v => updateDvrGroup(dvr.id, { distance: v })} />
+                                      </Col>
+                                      <Col md={4}>
+                                        <NumField id={`dvr-height-${dvr.id}`} size="sm" icon={ArrowUp} unit="m" label="Altura"
+                                          value={dvr.height} onChange={v => updateDvrGroup(dvr.id, { height: v })} />
+                                      </Col>
+                                      <Col md={4}>
+                                        <NumField id={`dvr-channels-${dvr.id}`} size="sm" icon={Video} unit="canales" label="Canales ocupados"
+                                          value={dvr.channels} onChange={v => updateDvrGroup(dvr.id, { channels: v })} />
+                                      </Col>
+                                    </Row>
+
+                                    <div className="mb-3">
+                                      <Breakdown rows={[
+                                        ['Base (0–10 m / 0–3 m / 0–4 canales)', acc.base],
+                                        [acc.extraDistance > 0 ? `${acc.extraDistance} m distancia × ${money(prices.pDvrAccessDistance)}/m` : 'Sin metros de distancia adicionales', acc.distanceCost],
+                                        [acc.extraHeight > 0 ? `${acc.extraHeight} m altura × ${money(prices.pDvrAccessHeight)}/m` : 'Sin metros de altura adicionales', acc.heightCost],
+                                        [acc.extraChannels > 0 ? `${acc.extraChannels} canal(es) extra × ${money(prices.pDvrExtraChannel)}` : 'Sin canales adicionales (4 incluidos)', acc.channelCost],
+                                      ]} />
+                                    </div>
+
+                                    {/* Foto para el DVR */}
+                                    <div className="d-flex align-items-center gap-3 mt-3 mb-3 p-2 border rounded bg-light">
+                                      {dvr.photo ? (
+                                        <div className="position-relative">
+                                          <img src={dvr.photo} alt={dvr.label} style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8, border: '1px solid #ddd' }} />
+                                          <Button variant="danger" size="sm" className="position-absolute top-0 end-0 rounded-circle p-1" style={{ transform: 'translate(50%, -50%)' }} onClick={() => updateDvrGroup(dvr.id, { photo: undefined })}>
+                                            <X size={12} />
+                                          </Button>
+                                        </div>
+                                      ) : (
+                                        <div className="d-flex align-items-center justify-content-center bg-white border rounded" style={{ width: 80, height: 80 }}>
+                                          <HardDrive size={24} className="text-secondary opacity-50" />
+                                        </div>
+                                      )}
+                                      <div>
+                                        <div className="small fw-semibold">Foto del Grabador</div>
+                                        <label className="btn btn-outline-primary btn-sm mt-1 mb-0">
+                                          <Camera size={14} className="me-1" /> {dvr.photo ? 'Cambiar foto' : 'Tomar / Subir foto'}
+                                          <input type="file" accept="image/*" capture="environment" className="d-none" onChange={(e) => handleImageUpload(e, (b64) => updateDvrGroup(dvr.id, { photo: b64 }))} />
+                                        </label>
+                                      </div>
+                                    </div>
+
+                                    {/* Dificultades físicas */}
+                                    <div className="border-top pt-3 mt-2 border-danger border-opacity-25">
+                                      <div className="d-flex justify-content-between align-items-center mb-3">
+                                        <div>
+                                          <div className="fw-semibold small text-danger">
+                                            <AlertTriangle size={14} className="me-1" />
+                                            Dificultades Físicas (Este Grabador)
+                                          </div>
+                                          <div className="text-muted small">Condiciones que complican el acceso a este equipo.</div>
+                                        </div>
+                                        <Badge bg="danger" text="white">{money(acc.difficultyCost)} extra</Badge>
+                                      </div>
+
+                                      <Row className="g-3">
+                                        {DIFFICULTIES.map(({ key, label }) => (
+                                          <Col md={6} key={key}>
+                                            <Form.Check
+                                              type="switch"
+                                              id={`diff-${dvr.id}-${key}`}
+                                              label={<span className="small fw-semibold">{label}</span>}
+                                              checked={dvr.difficulties[key].selected}
+                                              onChange={e => updateDvrDifficulty(dvr.id, key, { selected: e.target.checked })}
+                                            />
+                                            <div className="mt-2">
+                                              <PriceInput value={dvr.difficulties[key].price} maxWidth={150}
+                                                onChange={v => updateDvrDifficulty(dvr.id, key, { price: Number(v) })} />
+                                            </div>
+                                          </Col>
+                                        ))}
+
+                                        <Col md={12}>
+                                          <div className="p-2 border rounded bg-white">
+                                            <Form.Check
+                                              type="switch"
+                                              id={`diff-custom-${dvr.id}`}
+                                              label={<span className="small fw-bold text-primary">Otra dificultad</span>}
+                                              checked={dvr.difficulties.custom.selected}
+                                              onChange={e => updateDvrDifficulty(dvr.id, 'custom', { selected: e.target.checked })}
+                                            />
+                                            {dvr.difficulties.custom.selected && (
+                                              <Row className="g-2 mt-1">
+                                                <Col md={8}>
+                                                  <Form.Control
+                                                    type="text" size="sm"
+                                                    placeholder="Ej: El DVR está amarrado con guaya y toca cortarla..."
+                                                    value={dvr.difficulties.custom.text}
+                                                    onChange={e => updateDvrDifficulty(dvr.id, 'custom', { text: e.target.value })}
+                                                  />
+                                                </Col>
+                                                <Col md={4}>
+                                                  <PriceInput placeholder="Valor extra"
+                                                    value={dvr.difficulties.custom.price === 0 ? '' : dvr.difficulties.custom.price}
+                                                    onChange={v => updateDvrDifficulty(dvr.id, 'custom', { price: Number(v) })} />
+                                                </Col>
+                                              </Row>
+                                            )}
+                                          </div>
+                                        </Col>
+                                      </Row>
+                                    </div>
+                                  </>
+                                )}
+                              </Card.Body>
+                            </Card>
+                          );
+                        })}
+                      </Panel>
+                    </Col>
+                  )}
+
+                  {isMaintenance && (
+                    <Col xs={12}>
+                      <Panel className="mb-3">
+                        <PanelHeader
+                          title="Tareas generales (Globales)"
+                          hint="Tareas de revisión o limpieza que no dependen de una falla específica."
+                          badge={<Badge bg="info" text="dark">{money(sumSelected(globalTasks))}</Badge>}
+                        />
+                        <ItemRows
+                          defs={GLOBAL_TASKS}
+                          state={globalTasks}
+                          patch={patchGlobalTask}
+                          labelWidth={260}
+                          afterUnit={(def, st) => def.perCamera && (
+                            <Button variant="link" size="sm" className="p-0 small text-decoration-none" disabled={!st.selected}
+                              onClick={() => patchGlobalTask(def.key, { quantity: cameraCount })}>
+                              usar {data.cameras} cámaras
+                            </Button>
+                          )}
+                        />
+                      </Panel>
+
+                      <div className="d-flex justify-content-between align-items-center mb-2 mt-4">
+                        <h6 className="fw-bold mb-0">Reparaciones específicas por cámara</h6>
+                        <Button variant="outline-primary" size="sm" onClick={addFaultGroup}>
+                          <PlusCircle size={14} className="me-1" /> Añadir otra cámara
+                        </Button>
+                      </div>
+
+                      {faultGroups.some(g => g.tasks.cableChange?.selected) && (
+                        <Panel className="mb-3 border-info bg-info bg-opacity-10">
+                          <PanelHeader 
+                            title="Configuración de cableado" 
+                            hint="Aplica a todos los puntos de cambio de cableado seleccionados en las cámaras."
+                          />
+                          <Row className="g-2">
+                            <Col sm={6}>
+                              <NumField id="service-cable-distance" size="sm" compact icon={MapPin} unit="m"
+                                label="Distancia al grabador / energía" {...bind('cableDistance')} />
+                            </Col>
+                            <Col sm={6}>
+                              <NumField id="service-cable-height" size="sm" compact icon={ArrowUp} unit="m"
+                                label="Altura de instalación" {...bind('cableHeight')} />
+                            </Col>
+                          </Row>
+                        </Panel>
+                      )}
+
+                      {faultGroups.map((group) => (
+                        <Card key={group.id} className="mb-3 border-0 shadow-sm">
+                          <Card.Body className="bg-light rounded-3 border">
+                            <div className="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
+                              <div className="d-flex align-items-center gap-2">
+                                <Video size={16} className="text-primary" />
+                                <Form.Control
+                                  size="sm"
+                                  style={{ maxWidth: 250 }}
+                                  value={group.label}
+                                  onChange={e => updateFaultGroupLabel(group.id, e.target.value)}
+                                  placeholder="Ej: Cámara Entrada, Falla Pasillo..."
+                                />
+                              </div>
+                              {faultGroups.length > 1 && (
+                                <Button variant="outline-danger" size="sm" onClick={() => removeFaultGroup(group.id)}>
+                                  <Trash2 size={14} className="me-1" /> Eliminar
+                                </Button>
                               )}
                             </div>
-                          );
-                        })}
-                      </div>
+                            
+                            <ItemRows
+                              defs={FAULT_TASKS}
+                              state={group.tasks}
+                              patch={(key, p) => patchFaultTask(group.id, key, p)}
+                              labelWidth={240}
+                              totalOf={key => key === 'cableChange' ? cableTotals[group.id].total : lineTotal(group.tasks[key])}
+                            />
+                            
+                            {group.tasks.cableChange.selected && (cableTotals[group.id].extraDistance > 0 || cableTotals[group.id].extraHeight > 0) && (
+                              <div className="small text-muted mt-2 ms-4 p-2 bg-white rounded border" style={{ lineHeight: 1.4 }}>
+                                <Row2 l="Base incluida (10 m / 3 m)" r={`${money(group.tasks.cableChange.unitPrice)} × ${group.tasks.cableChange.quantity} punto(s)`} />
+                                {cableTotals[group.id].extraDistance > 0 && (
+                                  <Row2 l={`${cableTotals[group.id].extraDistance} m dist extra × ${money(prices.pCableDistanceRate)}/m × ${group.tasks.cableChange.quantity} punto(s)`} r={money(cableTotals[group.id].distanceExcess)} />
+                                )}
+                                {cableTotals[group.id].extraHeight > 0 && (
+                                  <Row2 l={`${cableTotals[group.id].extraHeight} m alt extra × ${money(prices.pCableHeightRate)}/m × ${group.tasks.cableChange.quantity} punto(s)`} r={money(cableTotals[group.id].heightExcess)} />
+                                )}
+                                <Row2 className="border-top pt-1 mt-1" l={<strong>Subtotal cableado</strong>} r={<strong>{money(cableTotals[group.id].total)}</strong>} />
+                              </div>
+                            )}
 
-                      <div className="border rounded-3 p-3 bg-light">
-                        <div className="d-flex justify-content-between align-items-center mb-2">
-                          <div>
-                            <div className="fw-semibold small">Materiales adicionales</div>
-                            <div className="text-muted small">
-                              Repuestos o consumibles (fuentes, baluns, cable, cajas, etc.). No incluyen mano de obra.
+                            {/* Foto para la Cámara */}
+                            <div className="d-flex align-items-center gap-3 mt-3 p-2 border rounded bg-white">
+                              {group.photo ? (
+                                <div className="position-relative">
+                                  <img src={group.photo} alt={group.label} style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8, border: '1px solid #ddd' }} />
+                                  <Button variant="danger" size="sm" className="position-absolute top-0 end-0 rounded-circle p-1" style={{ transform: 'translate(50%, -50%)' }} onClick={() => updateFaultGroupPhoto(group.id, undefined)}>
+                                    <X size={12} />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div className="d-flex align-items-center justify-content-center bg-light border rounded" style={{ width: 80, height: 80 }}>
+                                  <Camera size={24} className="text-secondary opacity-50" />
+                                </div>
+                              )}
+                              <div>
+                                <div className="small fw-semibold">Evidencia fotográfica</div>
+                                <label className="btn btn-outline-primary btn-sm mt-1 mb-0">
+                                  <Camera size={14} className="me-1" /> {group.photo ? 'Cambiar foto' : 'Tomar / Subir foto'}
+                                  <input type="file" accept="image/*" capture="environment" className="d-none" onChange={(e) => handleImageUpload(e, (b64) => updateFaultGroupPhoto(group.id, b64))} />
+                                </label>
+                              </div>
                             </div>
+
+                          </Card.Body>
+                        </Card>
+                      ))}
+
+                      <div className="mt-3">
+                        {bundleDiscount.amount > 0 ? (
+                          <div className="small text-success fw-semibold">
+                            <strong>Descuento por combo:</strong> {bundleDiscount.count} servicio(s) en total → <strong>{bundleDiscount.totalPct}%</strong>
+                            {' '}sobre {money(bundleDiscount.laborBase)} de mano de obra = <strong>−{money(bundleDiscount.amount)}</strong>.
                           </div>
-                        </div>
-
-                        {MAINTENANCE_MATERIALS.map(mat => {
-                          const state = maintenanceMaterials[mat.key];
-                          const total = state.quantity * state.unitPrice;
-                          return (
-                            <div key={mat.key} className="d-flex flex-wrap align-items-center gap-2 py-2 border-top">
-                              <Form.Check
-                                type="checkbox"
-                                className="me-2"
-                                checked={state.selected}
-                                onChange={e => setMaintenanceMaterials(prev => ({
-                                  ...prev,
-                                  [mat.key]: { ...prev[mat.key], selected: e.target.checked },
-                                }))}
-                                label={<span className="small fw-semibold">{mat.label}</span>}
-                                style={{ minWidth: 260 }}
-                              />
-                              <Form.Control
-                                type="number"
-                                min={1}
-                                size="sm"
-                                value={state.quantity}
-                                disabled={!state.selected}
-                                onChange={e => setMaintenanceMaterials(prev => ({
-                                  ...prev,
-                                  [mat.key]: { ...prev[mat.key], quantity: Math.max(1, nonNegative(e.target.value)) },
-                                }))}
-                                style={{ maxWidth: 80 }}
-                              />
-                              <span className="small text-muted">{mat.unit}</span>
-                              <InputGroup size="sm" style={{ maxWidth: 160 }}>
-                                <InputGroup.Text>$</InputGroup.Text>
-                                <Form.Control
-                                  type="number"
-                                  min={0}
-                                  value={state.unitPrice}
-                                  disabled={!state.selected}
-                                  onChange={e => setMaintenanceMaterials(prev => ({
-                                    ...prev,
-                                    [mat.key]: { ...prev[mat.key], unitPrice: nonNegative(e.target.value) },
-                                  }))}
-                                />
-                              </InputGroup>
-                              <span className="small fw-semibold ms-auto">{money(total)}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </Col>
-                  )}
-
-                  {/* ---- VIDEO ---- */}
-                  {selectedService === 'video' && (
-                    <Col md={6}>
-                      <Form.Group controlId="service-video-cause">
-                        <Form.Label className="small fw-semibold">Causa probable de la pérdida</Form.Label>
-                        <Form.Select
-                          value={videoCause}
-                          onChange={e => handleVideoCauseChange(e.target.value as VideoCause)}
-                        >
-                          {VIDEO_CAUSES.map(c => (
-                            <option key={c.value} value={c.value}>{c.label}</option>
-                          ))}
-                        </Form.Select>
-                      </Form.Group>
-                    </Col>
-                  )}
-
-                  {selectedService === 'video' && (
-                    <Col md={6}>
-                      <Form.Group controlId="service-affected-cameras">
-                        <Form.Label className="small fw-semibold">Cámaras afectadas</Form.Label>
-                        <Form.Select value={data.affected} onChange={e => updateField('affected', e.target.value)}>
-                          <option value="1">1 cámara</option>
-                          <option value="2-4">2 a 4 cámaras</option>
-                          <option value="5-8">5 a 8 cámaras</option>
-                          <option value="9+">Más de 8 cámaras</option>
-                        </Form.Select>
-                      </Form.Group>
-                    </Col>
-                  )}
-
-                  {selectedService === 'video' && videoCause !== 'unknown' && (
-                    <Col xs={12}>
-                      <div className="border rounded-3 p-3 bg-light">
-                        <div className="d-flex justify-content-between align-items-center mb-2">
-                          <div>
-                            <div className="fw-semibold small">Materiales probables</div>
-                            <div className="text-muted small">Marque los que se requieran y ajuste cantidad y precio.</div>
+                        ) : bundleDiscount.count === 1 ? (
+                          <div className="small text-muted">
+                            💡 Marca un segundo servicio (en cualquier cámara) para activar el descuento por combo (15%).
                           </div>
-                          <Badge bg="info" text="dark">{money(videoMaterialsTotal)}</Badge>
-                        </div>
-
-                        {VIDEO_MATERIALS.map(mat => {
-                          const state = videoMaterials[mat.key];
-                          const total = state.quantity * state.unitPrice;
-                          return (
-                            <div key={mat.key} className="d-flex flex-wrap align-items-center gap-2 py-2 border-top">
-                              <Form.Check
-                                type="checkbox"
-                                className="me-2"
-                                checked={state.selected}
-                                onChange={e => setVideoMaterials(prev => ({
-                                  ...prev,
-                                  [mat.key]: { ...prev[mat.key], selected: e.target.checked },
-                                }))}
-                                label={<span className="small fw-semibold">{mat.label}</span>}
-                                style={{ minWidth: 200 }}
-                              />
-                              <Form.Control
-                                type="number"
-                                min={1}
-                                size="sm"
-                                value={state.quantity}
-                                disabled={!state.selected}
-                                onChange={e => setVideoMaterials(prev => ({
-                                  ...prev,
-                                  [mat.key]: { ...prev[mat.key], quantity: Math.max(1, nonNegative(e.target.value)) },
-                                }))}
-                                style={{ maxWidth: 80 }}
-                              />
-                              <span className="small text-muted">{mat.unit}</span>
-                              <InputGroup size="sm" style={{ maxWidth: 170 }}>
-                                <InputGroup.Text>$</InputGroup.Text>
-                                <Form.Control
-                                  type="number"
-                                  min={0}
-                                  value={state.unitPrice}
-                                  disabled={!state.selected}
-                                  onChange={e => setVideoMaterials(prev => ({
-                                    ...prev,
-                                    [mat.key]: { ...prev[mat.key], unitPrice: nonNegative(e.target.value) },
-                                  }))}
-                                />
-                              </InputGroup>
-                              <span className="small fw-semibold ms-auto">{money(total)}</span>
-                            </div>
-                          );
-                        })}
+                        ) : null}
                       </div>
+
+                      <Panel className="mt-4">
+                        <PanelHeader
+                          title="Materiales adicionales"
+                          hint="Repuestos o consumibles (fuentes, baluns, cable, cámaras, etc.). No incluyen mano de obra."
+                        />
+                        <ItemRows defs={MAINTENANCE_MATERIALS} state={maintenanceMaterials} patch={patchMaterial} labelWidth={260} />
+                      </Panel>
                     </Col>
                   )}
 
-                  {showsInternet && (
+                  {isVideo && (
+                    <>
+                      <Col md={6}>
+                        <SelectField id="service-video-cause" label="Causa probable de la pérdida" value={videoCause}
+                          onChange={v => handleVideoCauseChange(v as VideoCause)}
+                          options={VIDEO_CAUSES.map(c => [c.value, c.label])} />
+                      </Col>
+                      <Col md={6}>
+                        <SelectField id="service-affected-cameras" label="Cámaras afectadas"
+                          options={Object.entries(AFFECTED).map(([k, a]) => [k, a.option])} {...bind('affected')} />
+                      </Col>
+                      {videoCause !== 'unknown' && (
+                        <Col xs={12}>
+                          <Panel>
+                            <PanelHeader
+                              title="Materiales probables"
+                              hint="Marque los que se requieran y ajuste cantidad y precio."
+                              badge={<Badge bg="info" text="dark">{money(videoMaterialsTotal)}</Badge>}
+                            />
+                            <ItemRows defs={VIDEO_MATERIALS} state={videoMaterials} patch={patchVideoMaterial} labelWidth={200} priceWidth={170} />
+                          </Panel>
+                        </Col>
+                      )}
+                    </>
+                  )}
+
+                  {INTERNET_SERVICES.includes(selectedService) && (
                     <Col md={6}>
-                      <Form.Group controlId="service-internet">
-                        <Form.Label className="small fw-semibold">¿Hay internet disponible?</Form.Label>
-                        <Form.Select value={data.internet} onChange={e => updateField('internet', e.target.value)}>
-                          <option value="yes">Sí, funciona</option>
-                          <option value="no">No hay internet</option>
-                          <option value="unknown">No sabe</option>
-                        </Form.Select>
-                      </Form.Group>
+                      <SelectField id="service-internet" label="¿Hay internet disponible?"
+                        options={[['yes', 'Sí, funciona'], ['no', 'No hay internet'], ['unknown', 'No sabe']]} {...bind('internet')} />
                     </Col>
                   )}
 
@@ -1471,9 +1262,7 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
                       <Form.Group controlId="service-other-description">
                         <Form.Label className="small fw-semibold">Descripción de la solicitud</Form.Label>
                         <Form.Control
-                          as="textarea"
-                          rows={3}
-                          maxLength={500}
+                          as="textarea" rows={3} maxLength={500}
                           value={data.otherText}
                           onChange={e => updateField('otherText', e.target.value)}
                           placeholder="Describa el problema o servicio que solicita el cliente"
@@ -1483,58 +1272,20 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
                     </Col>
                   )}
 
-                  <Col md={4}>
-                    <Form.Group controlId="service-travel">
-                      <Form.Label className="small fw-semibold">
-                        <MapPin size={14} className="me-1" />Desplazamiento
-                      </Form.Label>
-                      <InputGroup>
-                        <InputGroup.Text>$</InputGroup.Text>
-                        <Form.Control type="number" min={0} value={data.travel} onChange={e => updateField('travel', e.target.value)} />
-                      </InputGroup>
-                    </Form.Group>
-                  </Col>
-
-                  <Col md={4}>
-                    <Form.Group controlId="service-materials">
-                      <Form.Label className="small fw-semibold">
-                        <Package size={14} className="me-1" />Otros materiales
-                      </Form.Label>
-                      <InputGroup>
-                        <InputGroup.Text>$</InputGroup.Text>
-                        <Form.Control type="number" min={0} value={data.materials} onChange={e => updateField('materials', e.target.value)} />
-                      </InputGroup>
-                    </Form.Group>
-                  </Col>
-
-                  <Col md={4}>
-                    <Form.Group controlId="service-extra-labor">
-                      <Form.Label className="small fw-semibold">
-                        <Clock3 size={14} className="me-1" />Mano de obra extra
-                      </Form.Label>
-                      <InputGroup>
-                        <InputGroup.Text>$</InputGroup.Text>
-                        <Form.Control type="number" min={0} value={data.extraLabor} onChange={e => updateField('extraLabor', e.target.value)} />
-                      </InputGroup>
-                    </Form.Group>
-                  </Col>
+                  <Col md={4}><NumField id="service-travel" icon={MapPin} prefix="$" label="Desplazamiento" {...bind('travel')} /></Col>
+                  <Col md={4}><NumField id="service-materials" icon={Package} prefix="$" label="Otros materiales" {...bind('materials')} /></Col>
+                  <Col md={4}><NumField id="service-extra-labor" icon={Clock3} prefix="$" label="Mano de obra extra" {...bind('extraLabor')} /></Col>
                 </Row>
               </Card.Body>
             </Card>
 
-            {/* ---------- PASO 3 ---------- */}
             <Card className="border-0 shadow-sm">
               <Card.Header className="bg-white d-flex justify-content-between align-items-center py-3">
                 <div className="d-flex align-items-center gap-2">
                   <Settings size={17} className="text-secondary" />
                   <strong className="small">Configuración de precios</strong>
                 </div>
-                <Button
-                  variant="link"
-                  size="sm"
-                  className="text-decoration-none"
-                  onClick={() => setShowPrices(value => !value)}
-                >
+                <Button variant="link" size="sm" className="text-decoration-none" onClick={() => setShowPrices(v => !v)}>
                   {showPrices ? 'Ocultar precios' : 'Editar precios'}
                 </Button>
               </Card.Header>
@@ -1544,20 +1295,13 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
                     Estos precios se guardan solo en el estado de este componente. Para administrarlos desde el ERP, deben cargarse desde la configuración o la base de datos.
                   </Alert>
                   <Row className="g-3">
-                    {PRICE_FIELDS.map(({ key, label }) => (
+                    {PRICE_CONFIG.map(({ key, label }) => (
                       <Col md={6} key={key}>
                         <Form.Group controlId={`price-${key}`}>
                           <Form.Label className="small text-muted">{label}</Form.Label>
                           <InputGroup>
-                            <InputGroup.Text>
-                              {key === 'pDvrDifficultySurcharge' ? '%' : '$'}
-                            </InputGroup.Text>
-                            <Form.Control
-                              type="number"
-                              min={0}
-                              value={prices[key]}
-                              onChange={e => updatePrice(key, e.target.value)}
-                            />
+                            <InputGroup.Text>$</InputGroup.Text>
+                            <Form.Control type="number" min={0} value={prices[key]} onChange={e => updatePrice(key, e.target.value)} />
                           </InputGroup>
                         </Form.Group>
                       </Col>
@@ -1573,26 +1317,22 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
             </Card>
           </Col>
 
-          {/* ---------- RESUMEN ---------- */}
           <Col lg={5}>
             <Card className="border-0 shadow-sm h-100">
               <Card.Header className="bg-white border-bottom py-3">
-                <div className="d-flex align-items-center gap-2">
-                  <span className="rounded-circle bg-primary text-white px-2 py-1 small fw-bold">3</span>
+                <Step n={3}>
                   <div>
                     <strong>Resumen de cotización</strong>
-                    <div className="small text-muted">{SERVICE_NAMES[selectedService]}</div>
+                    <div className="small text-muted">{SERVICES[selectedService].name}</div>
                   </div>
-                </div>
+                </Step>
               </Card.Header>
               <Card.Body className="d-flex flex-column">
                 <Alert variant={result.direct ? 'success' : 'warning'} className="border-0">
                   <div className="d-flex align-items-start gap-2">
                     <ClipboardList size={19} className="flex-shrink-0 mt-1" />
                     <div>
-                      <div className="small text-uppercase fw-bold">
-                        {result.direct ? 'Cotización directa' : 'Validación requerida'}
-                      </div>
+                      <div className="small text-uppercase fw-bold">{result.direct ? 'Cotización directa' : 'Validación requerida'}</div>
                       <div className="fw-bold mt-1">{result.title}</div>
                       <div className="small mt-2">{result.message}</div>
                     </div>
@@ -1601,39 +1341,31 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
 
                 <div className="fw-semibold small mb-2">Detalle de valores</div>
 
-                {result.lines.length ? (
-                  result.lines.map(line => (
-                    <div
-                      key={line.id}
-                      className="d-flex justify-content-between gap-3 py-3 border-bottom"
-                    >
-                      <div className="min-w-0">
-                        <div className="small fw-semibold">
-                          {line.itemType === 'product' && (
-                            <Badge bg="info" text="dark" className="me-2" style={{ fontSize: '0.6rem' }}>
-                              Material
-                            </Badge>
-                          )}
-                          {line.description}
-                        </div>
-                        <div className="small text-muted">{line.detail}</div>
+                {result.lines.length ? result.lines.map(line => (
+                  <div key={line.id} className="d-flex justify-content-between gap-3 py-3 border-bottom">
+                    <div className="min-w-0">
+                      <div className="small fw-semibold">
+                        {line.itemType === 'product' && (
+                          <Badge bg="info" text="dark" className="me-2" style={{ fontSize: '0.6rem' }}>Material</Badge>
+                        )}
+                        {line.amount < 0 && (
+                          <Badge bg="success" text="dark" className="me-2" style={{ fontSize: '0.6rem' }}>Descuento</Badge>
+                        )}
+                        {line.description}
                       </div>
-                      <div className="small fw-semibold text-nowrap">{money(line.amount)}</div>
+                      <div className="small text-muted">{line.detail}</div>
                     </div>
-                  ))
-                ) : (
+                    <div className={`small fw-semibold text-nowrap ${line.amount < 0 ? 'text-success' : ''}`}>
+                      {line.amount < 0 ? `−${money(-line.amount)}` : money(line.amount)}
+                    </div>
+                  </div>
+                )) : (
                   <div className="small text-muted py-3">No hay conceptos calculados.</div>
                 )}
 
                 <div className="mt-3 pt-2">
-                  <div className="d-flex justify-content-between small mb-2">
-                    <span className="text-muted">Subtotal</span>
-                    <span>{money(result.subtotal)}</span>
-                  </div>
-                  <div className="d-flex justify-content-between small mb-2">
-                    <span className="text-muted">IVA estimado (19%)</span>
-                    <span>{money(estimatedTax)}</span>
-                  </div>
+                  <Row2 className="small mb-2" l={<span className="text-muted">Subtotal</span>} r={money(result.subtotal)} />
+                  <Row2 className="small mb-2" l={<span className="text-muted">IVA estimado (19%)</span>} r={money(estimatedTax)} />
                   <div className="d-flex justify-content-between align-items-end border-top pt-3 mt-2">
                     <div>
                       <div className="small text-uppercase text-muted fw-bold">Total estimado con IVA</div>
@@ -1645,25 +1377,17 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
 
                 <Card className="bg-light border-0 mt-4">
                   <Card.Body>
-                    <div className="small text-uppercase text-muted fw-bold">
-                      Guion sugerido para el vendedor
-                    </div>
+                    <div className="small text-uppercase text-muted fw-bold">Guion sugerido para el vendedor</div>
                     <p className="small mt-2 mb-0">{result.script}</p>
                   </Card.Body>
                 </Card>
 
                 <div className="mt-auto pt-3">
-                  <Button
-                    variant="primary"
-                    className="w-100 py-2 fw-semibold"
-                    onClick={handleAddToQuote}
-                  >
-                    <PlusCircle size={17} className="me-2" />
-                    Agregar conceptos a cotización
+                  <Button variant="primary" className="w-100 py-2 fw-semibold" onClick={handleAddToQuote}>
+                    <PlusCircle size={17} className="me-2" />Agregar conceptos a cotización
                   </Button>
                   <Button variant="outline-secondary" className="w-100 mt-2" onClick={copyQuote}>
-                    <Copy size={16} className="me-2" />
-                    Copiar resumen
+                    <Copy size={16} className="me-2" />Copiar resumen
                   </Button>
                   <div className="small text-muted mt-3">
                     El IVA mostrado es una estimación. Confirme la configuración tributaria de cada concepto en el ERP antes de emitir la cotización definitiva.
