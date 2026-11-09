@@ -1,5 +1,5 @@
 import {
-  AFFECTED, BASE, CAMERA_DIFFICULTIES, DVR_DIFFICULTIES, MAINTENANCE_MATERIALS, SYSTEMS, VIDEO_CAUSES,
+  AFFECTED, BASE, CAMERA_DIFFICULTIES, DVR_DIFFICULTIES, MAINTENANCE_MATERIALS, SURCHARGES, SYSTEMS, VIDEO_CAUSES,
   VIDEO_MATERIALS,
 } from './catalog';
 import type { Prices, ServiceForm, ServiceKey, SystemType } from './catalog';
@@ -133,6 +133,8 @@ export interface QuoteInput {
   videoCause: VideoCause; videoMaterials: Items; maintenanceMaterials: Items;
   dvrGroups: DvrGroup[];
   laborCap: number; camerasWithWork: number;
+  /** El vendedor autorizó no aplicar el tope de mano de obra (queda en el detalle). */
+  noCap?: boolean;
 }
 
 export type AddLine = (
@@ -141,7 +143,7 @@ export type AddLine = (
 ) => void;
 
 export function addMaintenanceLines(i: QuoteInput, add: AddLine) {
-  const { dvrGroups, system, prices, laborCap } = i;
+  const { dvrGroups, system, prices, laborCap, noCap = false } = i;
   const { deviceName, cameraTasks, dvrTasks } = SYSTEMS[system];
 
   for (const dvr of dvrGroups) {
@@ -155,9 +157,10 @@ export function addMaintenanceLines(i: QuoteInput, add: AddLine) {
       if (acc.extraHeight > 0) parts.push(`+${acc.extraHeight} m alt`);
       if (acc.extraChannels > 0) parts.push(`+${acc.extraChannels} canales`);
       if (acc.difficultyCost > 0) parts.push('+ Dificultades físicas');
+      if (dvr.note?.trim()) parts.push(`Nota: ${dvr.note.trim()}`);
       if (dvr.photos.length > 0) parts.push(`📸 ${dvr.photos.length} foto(s)`);
       add(`dvr-accessibility-${dvr.id}`, `Accesibilidad Grabador: ${dvrName}`, parts.join(' · '), acc.total, 'service', dvr.photos, {
-        categoria: 'accesibilidad_grabador', grabador: dvrName,
+        categoria: 'accesibilidad_grabador', grabador: dvrName, nota: dvr.note?.trim() || null,
         extraDistance: acc.extraDistance, extraHeight: acc.extraHeight, canalesExtra: acc.extraChannels, dificultades: acc.difficultyCost,
       });
     }
@@ -171,8 +174,9 @@ export function addMaintenanceLines(i: QuoteInput, add: AddLine) {
       maintAmount += amount;
       maintDetails.push(`${st.quantity > 1 ? `${st.quantity} ${def.unit} - ` : ''}${def.label}`);
     }
+    if (dvr.note?.trim()) maintDetails.push(`Nota: ${dvr.note.trim()}`);
     if (maintAmount > 0) add(`dvr-maint-${dvr.id}`, `Mantenimiento Grabador: ${dvrName}`, maintDetails.join(' + '), maintAmount, 'service', dvr.photos, {
-      categoria: 'mantenimiento_grabador', grabador: dvrName, fotos: dvr.photos.length,
+      categoria: 'mantenimiento_grabador', grabador: dvrName, fotos: dvr.photos.length, nota: dvr.note?.trim() || null,
     });
 
     for (const cam of dvr.cameras) {
@@ -198,15 +202,22 @@ export function addMaintenanceLines(i: QuoteInput, add: AddLine) {
         laborTotal += lineTotal(task);
         laborDetails.push(`${task.quantity} ${def.unit} - ${def.label}`);
       }
-      const laborCharged = Math.min(laborTotal, laborCap);
+      const laborCharged = noCap ? laborTotal : Math.min(laborTotal, laborCap);
 
       /* --- Línea 1: mano de obra (con tope aplicado) --- */
       if (laborCharged > 0) {
         const parts: string[] = [laborDetails.join(' + ')];
-        if (laborTotal > laborCap) parts.push(`Tope de mano de obra aplicado: -${money(laborTotal - laborCap)}`);
+        if (laborTotal > laborCap) {
+          parts.push(noCap
+            ? `Tope no aplicado (autorizado): ${money(laborTotal - laborCap)} adicionales`
+            : `Tope de mano de obra aplicado: -${money(laborTotal - laborCap)}`);
+        }
+        if (cam.note?.trim()) parts.push(`Nota: ${cam.note.trim()}`);
         if (cam.photos.length > 0) parts.push(`📸 ${cam.photos.length} foto(s)`);
         add(`cam-labor-${cam.id}`, `Mantenimiento Cámara: ${camName} (${dvrName})`, parts.join(' | '), laborCharged, 'service', cam.photos, {
-          categoria: 'mano_obra', camara: camName, bruto: laborTotal, tope: laborCap, topeAplicado: laborTotal - laborCharged, fotos: cam.photos.length,
+          categoria: 'mano_obra', camara: camName, bruto: laborTotal, tope: laborCap,
+          topeAplicado: laborTotal - laborCharged, topeIgnorado: noCap,
+          nota: cam.note?.trim() || null, fotos: cam.photos.length,
         });
       }
 
@@ -349,6 +360,15 @@ export function buildQuote(i: QuoteInput) {
   if (travel > 0) add('travel', 'Desplazamiento', 'Cargo adicional', travel);
   if (materials > 0) add('materials', 'Otros materiales / repuestos', 'Valor ingresado manualmente', materials, 'product');
   if (extraLabor > 0) add('extra-labor', 'Mano de obra adicional', 'Cargo adicional', extraLabor);
+
+  /* Recargos: se calculan sobre los servicios (no sobre materiales ni desplazamiento). */
+  const surchargeBase = lines.reduce((sum, line) => (line.itemType === 'service' ? sum + line.amount : sum), 0);
+  for (const { key, label } of SURCHARGES) {
+    const pct = nonNegative(data[key]);
+    if (pct <= 0) continue;
+    add(`surcharge-${key}`, `Recargo ${label} (${pct}%)`, `${pct}% sobre servicios (${money(surchargeBase)})`,
+      Math.round(surchargeBase * pct / 100));
+  }
 
   return { direct, title, message, script, lines, subtotal: lines.reduce((sum, l) => sum + l.amount, 0) };
 }

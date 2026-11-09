@@ -39,17 +39,30 @@ export const ServiceGrid = memo(function ServiceGrid({ selected, onSelect }: {
   );
 });
 
-export const PriceSettings = memo(function PriceSettings({ prices, taxRate, onChange, onTaxRateChange, onReset }: {
-  prices: Prices; taxRate: number;
+export const PriceSettings = memo(function PriceSettings({ prices, taxRate, maxDiscount, syncStatus, onChange, onTaxRateChange, onMaxDiscountChange, onReset }: {
+  prices: Prices; taxRate: number; maxDiscount: number;
+  syncStatus: 'idle' | 'saving' | 'synced' | 'local';
   onChange: (key: PriceKey, value: string) => void;
   onTaxRateChange: (value: string) => void;
+  onMaxDiscountChange: (value: string) => void;
   onReset: () => void;
 }) {
+  const syncLabel: Record<typeof syncStatus, string> = {
+    idle: 'Sin cambios',
+    saving: 'Sincronizando…',
+    synced: 'Sincronizado con la empresa',
+    local: 'Solo en este dispositivo',
+  };
+  const syncBg = syncStatus === 'synced' ? 'success' : syncStatus === 'local' ? 'warning' : 'secondary';
+
   return (
     <Card.Body>
-      <Alert variant="info" className="small">
-        Los precios y el IVA se guardan en este dispositivo y se <strong>sincronizan con la empresa</strong> a través de
-        <code> site_settings</code>. Si no tienes permisos de escritura sobre la configuración, quedan al menos en tu equipo.
+      <Alert variant="info" className="small d-flex justify-content-between align-items-start gap-2 flex-wrap">
+        <span>
+          Los precios, el IVA y el descuento máximo se guardan en este dispositivo y se
+          <strong> sincronizan con la empresa</strong> en <code>site_settings</code>.
+        </span>
+        <Badge bg={syncBg} text={syncStatus === 'local' ? 'dark' : undefined}>{syncLabel[syncStatus]}</Badge>
       </Alert>
       <Row className="g-3">
         <Col md={6}>
@@ -57,6 +70,15 @@ export const PriceSettings = memo(function PriceSettings({ prices, taxRate, onCh
             <Form.Label className="small text-muted">IVA (%) aplicado a la cotización</Form.Label>
             <InputGroup>
               <Form.Control type="number" min={0} max={100} value={taxRate} onChange={e => onTaxRateChange(e.target.value)} />
+              <InputGroup.Text>%</InputGroup.Text>
+            </InputGroup>
+          </Form.Group>
+        </Col>
+        <Col md={6}>
+          <Form.Group controlId="price-max-discount">
+            <Form.Label className="small text-muted">Descuento máximo autorizado (%)</Form.Label>
+            <InputGroup>
+              <Form.Control type="number" min={0} max={100} value={maxDiscount} onChange={e => onMaxDiscountChange(e.target.value)} />
               <InputGroup.Text>%</InputGroup.Text>
             </InputGroup>
           </Form.Group>

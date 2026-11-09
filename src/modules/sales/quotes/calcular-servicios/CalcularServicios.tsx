@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Badge, Button, Card, Col, Form, Modal, Row } from 'react-bootstrap';
 import {
-  Calculator, ClipboardList, Clock3, Copy, Eye, HardDrive, Info, MapPin, Package, PlusCircle, RotateCcw, Settings,
+  Bookmark, Calculator, ClipboardList, Clock3, Copy, Eye, HardDrive, Info, MapPin, Package, PlusCircle, RotateCcw,
+  Send, Settings,
 } from 'lucide-react';
 import {
   AFFECTED_OPTIONS, CAUSE_SERVICES, DEFAULT_PRICES, DEVICE_OPTIONS, DEVICE_SERVICES, INITIAL_FORM, INTERNET_OPTIONS,
-  INTERNET_SERVICES, KNOWN_CAUSE_OPTIONS, MAINTENANCE_MATERIALS, SERVICE_ENTRIES, SERVICES, SYSTEMS,
+  INTERNET_SERVICES, KNOWN_CAUSE_OPTIONS, MAINTENANCE_MATERIALS, SERVICE_ENTRIES, SERVICES, SURCHARGES, SYSTEMS,
   VIDEO_CAUSE_OPTIONS, VIDEO_CAUSES, VIDEO_MATERIALS, getLaborCap,
 } from './catalog';
 import type { PriceKey, ServiceForm, ServiceKey, SystemType } from './catalog';
@@ -16,7 +17,9 @@ import {
   buildQuote, countCamerasWithWork, createCamera, createDvr, initItems, money, nonNegative, remapItems, sumSelected,
 } from './calc';
 import { loadRemotePriceData, readStoredPrices, saveRemotePriceData, writeStoredPrices, type StoredPriceData } from './priceStorage';
-import { clearDraft, readDraft, writeDraft } from './draft';
+import { clearDraft, readDraft, writeDraft, type DraftInput } from './draft';
+import { addSaved, readSaved, removeSaved, type SavedCalculation } from './savedStore';
+import { SavedCalculationsModal } from './saved';
 import { ItemRows, NumField, Panel, PanelHeader, Row2, SelectField, Step } from './ui';
 import { DvrCard } from './cards';
 import type { Actions } from './cards';
@@ -28,7 +31,7 @@ import { buildQuotePdf } from '@/services/api/quotePdf';
  * Componente principal
  * ========================================================================= */
 
-export function CalcularServicios({ show, onHide, onAddItems }: CalcularServiciosProps) {
+export function CalcularServicios({ show, onHide, onAddItems, customerName }: CalcularServiciosProps) {
   /* Borrador previo (si la app se cerró a mitad del cálculo). */
   const [initialDraft] = useState(() => readDraft());
   const draftData = initialDraft?.data ? { ...INITIAL_FORM, ...initialDraft.data } : INITIAL_FORM;
@@ -44,6 +47,12 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
   const [maintenanceMaterials, setMaintenanceMaterials] = useState<Items>(() => initialDraft?.maintenanceMaterials ?? initItems(MAINTENANCE_MATERIALS));
   const [dvrGroups, setDvrGroups] = useState<DvrGroup[]>(() => initialDraft?.dvrGroups ?? [createDvr('DVR / NVR 1', 'analog', false, 4)]);
 
+  const [ignoreCap, setIgnoreCap] = useState(Boolean(initialDraft?.ignoreCap));
+  const [capReason, setCapReason] = useState(initialDraft?.capReason ?? '');
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'synced' | 'local'>('idle');
+  const [savedList, setSavedList] = useState<SavedCalculation[]>(() => readSaved());
+  const [showSaved, setShowSaved] = useState(false);
+
   /** Claves de material marcadas automáticamente por la causa de video. */
   const autoVideoMaterials = useRef<string[]>([]);
   /** Evita que el borrador se reescriba justo después de un "Nuevo cálculo". */
@@ -55,7 +64,10 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
   /* Persiste en el dispositivo al instante y sincroniza con la empresa (debounce). */
   useEffect(() => {
     writeStoredPrices(priceData);
-    const timer = setTimeout(() => { void saveRemotePriceData(priceData); }, 800);
+    const timer = setTimeout(async () => {
+      const ok = await saveRemotePriceData(priceData);
+      setSyncStatus(ok ? 'synced' : 'local');
+    }, 800);
     return () => clearTimeout(timer);
   }, [priceData]);
 
@@ -63,10 +75,25 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
   useEffect(() => {
     let cancelled = false;
     loadRemotePriceData().then(remote => {
-      if (!cancelled && remote) setPriceData(remote);
+      if (cancelled || !remote) return;
+      setPriceData(remote);
+      setSyncStatus('synced');
     });
     return () => { cancelled = true; };
   }, []);
+
+  /** Datos del cálculo actual, para borrador, plantillas e historial. */
+  const draftPayload = useCallback((): DraftInput => ({
+    service: selectedService,
+    system,
+    data,
+    videoCause,
+    videoMaterials,
+    maintenanceMaterials,
+    dvrGroups,
+    ignoreCap,
+    capReason,
+  }), [selectedService, system, data, videoCause, videoMaterials, maintenanceMaterials, dvrGroups, ignoreCap, capReason]);
 
   /** Vuelve el cálculo a cero y descarta el borrador guardado. */
   const resetCalculator = useCallback(() => {
@@ -79,6 +106,8 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
     setVideoMaterials(initItems(VIDEO_MATERIALS));
     setMaintenanceMaterials(initItems(MAINTENANCE_MATERIALS));
     setDvrGroups([createDvr('DVR / NVR 1', 'analog', false, 4)]);
+    setIgnoreCap(false);
+    setCapReason('');
     autoVideoMaterials.current = [];
   }, []);
 
@@ -93,11 +122,9 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
       return;
     }
 
-    const timer = setTimeout(() => {
-      writeDraft({ service: selectedService, system, data, videoCause, videoMaterials, maintenanceMaterials, dvrGroups });
-    }, 900);
+    const timer = setTimeout(() => { writeDraft(draftPayload()); }, 900);
     return () => clearTimeout(timer);
-  }, [show, selectedService, system, data, videoCause, videoMaterials, maintenanceMaterials, dvrGroups]);
+  }, [show, draftPayload]);
 
   const { deviceName } = SYSTEMS[system];
   const isMaintenance = selectedService === 'maintenance';
@@ -122,17 +149,28 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
     onChange: fieldHandlers[field],
   }), [data, fieldHandlers]);
 
-  const updatePrice = useCallback((field: PriceKey, value: string) =>
-    setPriceData(prev => ({ ...prev, prices: { ...prev.prices, [field]: nonNegative(value) } })), []);
+  const updatePrice = useCallback((field: PriceKey, value: string) => {
+    setSyncStatus('saving');
+    setPriceData(prev => ({ ...prev, prices: { ...prev.prices, [field]: nonNegative(value) } }));
+  }, []);
 
-  const updateTaxRate = useCallback((value: string) =>
+  const updateTaxRate = useCallback((value: string) => {
+    setSyncStatus('saving');
     setPriceData(prev => {
       const raw = nonNegative(value);
       return { ...prev, taxRate: Math.min(100, raw) };
-    }), []);
+    });
+  }, []);
 
-  const resetPrices = useCallback(() =>
-    setPriceData(prev => ({ ...prev, prices: { ...DEFAULT_PRICES } })), []);
+  const updateMaxDiscount = useCallback((value: string) => {
+    setSyncStatus('saving');
+    setPriceData(prev => ({ ...prev, maxDiscount: Math.min(100, nonNegative(value)) }));
+  }, []);
+
+  const resetPrices = useCallback(() => {
+    setSyncStatus('saving');
+    setPriceData(prev => ({ ...prev, prices: { ...DEFAULT_PRICES } }));
+  }, []);
 
   const patchMaterial = useCallback((key: string, p: Partial<MaterialState>) =>
     setMaintenanceMaterials(prev => ({ ...prev, [key]: { ...prev[key], ...p } })), []);
@@ -195,6 +233,32 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
         mapDvr(id, d => ({ ...d, maintenance: { ...d.maintenance, [key]: { ...d.maintenance[key], ...patch } } })),
       addCamera: (dvrId, sys) =>
         mapDvr(dvrId, d => ({ ...d, cameras: [...d.cameras, createCamera(`Cámara ${d.cameras.length + 1}`, sys)] })),
+      addCameras: (dvrId, count, sys) => mapDvr(dvrId, d => ({
+        ...d,
+        cameras: [
+          ...d.cameras,
+          ...Array.from({ length: Math.max(1, Math.min(20, count)) }, (_, i) =>
+            createCamera(`Cámara ${d.cameras.length + i + 1}`, sys, false)),
+        ],
+      })),
+      applyCameraToAll: (dvrId, camId) => mapDvr(dvrId, d => {
+        const source = d.cameras.find(camera => camera.id === camId);
+        if (!source) return d;
+
+        return {
+          ...d,
+          cameras: d.cameras.map(camera => camera.id === camId ? camera : {
+            ...camera,
+            distance: source.distance,
+            height: source.height,
+            cableDistance: source.cableDistance,
+            cableHeight: source.cableHeight,
+            note: source.note,
+            tasks: Object.fromEntries(Object.entries(source.tasks).map(([key, task]) => [key, { ...task }])),
+            difficulties: Object.fromEntries(Object.entries(source.difficulties).map(([key, diff]) => [key, { ...diff }])),
+          }),
+        };
+      }),
       updateCamera: (dvrId, camId, patch) => mapCamera(dvrId, camId, c => ({ ...c, ...patch })),
       removeCamera: (dvrId, camId) =>
         mapDvr(dvrId, d => ({ ...d, cameras: d.cameras.filter(c => c.id !== camId) })),
@@ -218,8 +282,8 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
 
   const result = useMemo(() => buildQuote({
     service: selectedService, system, prices, data, videoCause, videoMaterials, maintenanceMaterials,
-    dvrGroups, laborCap, camerasWithWork,
-  }), [selectedService, system, prices, data, videoCause, videoMaterials, maintenanceMaterials, dvrGroups, laborCap, camerasWithWork]);
+    dvrGroups, laborCap, camerasWithWork, noCap: ignoreCap,
+  }), [selectedService, system, prices, data, videoCause, videoMaterials, maintenanceMaterials, dvrGroups, laborCap, camerasWithWork, ignoreCap]);
 
   const { estimatedTax, estimatedTotal, discountedSubtotal } = useMemo(() => {
     const discountPct = Math.min(100, nonNegative(data.discount));
@@ -230,6 +294,36 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
 
   const discountPct = Math.min(100, nonNegative(data.discount));
 
+  /** Avisos suaves: no bloquean, pero evitan cotizaciones con datos raros. */
+  const warnings = useMemo(() => {
+    const list: string[] = [];
+
+    if (discountPct > priceData.maxDiscount) {
+      list.push(`Descuento de ${discountPct}%: supera el máximo autorizado (${priceData.maxDiscount}%).`);
+    }
+
+    for (const dvr of dvrGroups) {
+      if (!dvr.active) continue;
+      const dvrName = dvr.label || deviceName;
+
+      if (dvr.cameras.length === 0) list.push(`${dvrName} no tiene cámaras agregadas.`);
+      if (dvr.included) {
+        if (nonNegative(dvr.distance) > 100) list.push(`${dvrName}: distancia al tomacorriente muy alta (${dvr.distance} m).`);
+        if (nonNegative(dvr.height) > 15) list.push(`${dvrName}: altura muy alta (${dvr.height} m).`);
+        if (nonNegative(dvr.channels) === 0) list.push(`${dvrName}: canales ocupados en 0.`);
+      }
+
+      for (const cam of dvr.cameras) {
+        if (!cam.active) continue;
+        const camName = cam.label || 'Cámara';
+        if (nonNegative(cam.distance) > 100) list.push(`${camName}: distancia muy alta (${cam.distance} m).`);
+        if (nonNegative(cam.height) > 15) list.push(`${camName}: altura muy alta (${cam.height} m).`);
+      }
+    }
+
+    return list;
+  }, [discountPct, priceData.maxDiscount, dvrGroups, deviceName]);
+
   const otherNote = selectedService === 'other' ? data.otherText.trim() : '';
 
   /* ---- salida ---- */
@@ -239,11 +333,20 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
       return;
     }
 
-    const totalPhotos = result.lines.reduce((sum, line) => sum + line.photos.length, 0);
-
-    if (totalPhotos > MAX_PHOTOS_PER_QUOTE) {
+    if (discountPct > priceData.maxDiscount) {
       const continuar = window.confirm(
-        `La cotización lleva ${totalPhotos} fotos (se recomiendan máximo ${MAX_PHOTOS_PER_QUOTE}).\n\n` +
+        `El descuento de ${discountPct}% supera el máximo autorizado (${priceData.maxDiscount}%).\n\n` +
+        'Si continúas, la cotización quedará con ese descuento. ¿Deseas continuar?',
+      );
+      if (!continuar) return;
+    }
+
+    /* Fotos únicas: la misma foto del grabador se adjunta a dos líneas. */
+    const uniquePhotos = new Set(result.lines.flatMap(line => line.photos));
+
+    if (uniquePhotos.size > MAX_PHOTOS_PER_QUOTE) {
+      const continuar = window.confirm(
+        `La cotización lleva ${uniquePhotos.size} fotos (se recomiendan máximo ${MAX_PHOTOS_PER_QUOTE}).\n\n` +
         'Muchas fotos hacen más pesado el guardado y el PDF. ¿Deseas continuar de todas formas?',
       );
       if (!continuar) return;
@@ -263,35 +366,49 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
       .filter(it => it.unit_price > 0);
 
     if (!items.length) return;
+
+    /* Historial: deja copia del trabajo agregado para reutilizarlo después. */
+    const stamp = new Date().toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
+    setSavedList(addSaved(`Cálculo ${stamp}`, draftPayload(), 'auto'));
+
     onAddItems(items);
     resetCalculator();
     onHide();
-  }, [result.lines, otherNote, onAddItems, onHide, discountPct, taxRate, resetCalculator]);
+  }, [result.lines, otherNote, onAddItems, onHide, discountPct, taxRate, resetCalculator, priceData.maxDiscount, draftPayload]);
+
+  const summaryText = useMemo(() => [
+    'COTIZACIÓN PRELIMINAR S24 — SERVICIOS CCTV',
+    `Servicio: ${SERVICES[selectedService].name}`,
+    `Resultado: ${result.title}`,
+    ...(customerName ? [`Cliente: ${customerName}`] : []),
+    ...(otherNote ? [`Descripción: ${otherNote}`] : []),
+    '',
+    ...result.lines.map(l => `${l.description} (${l.detail}): ${money(l.amount)}`),
+    '',
+    `Subtotal: ${money(result.subtotal)}`,
+    ...(discountPct > 0 ? [`Descuento (${discountPct}%): -${money(result.subtotal - discountedSubtotal)}`] : []),
+    `IVA estimado (${taxRate}%): ${money(estimatedTax)}`,
+    `TOTAL ESTIMADO CON IVA: ${money(estimatedTotal)}`,
+    '',
+    `Observación: ${result.message}`,
+  ].join('\n'), [
+    selectedService, result, otherNote, estimatedTax, estimatedTotal, discountPct, discountedSubtotal, taxRate, customerName,
+  ]);
 
   const copyQuote = useCallback(async () => {
-    const text = [
-      'COTIZACIÓN PRELIMINAR S24 — SERVICIOS CCTV',
-      `Servicio: ${SERVICES[selectedService].name}`,
-      `Resultado: ${result.title}`,
-      ...(otherNote ? [`Descripción: ${otherNote}`] : []),
-      '',
-      ...result.lines.map(l => `${l.description} (${l.detail}): ${money(l.amount)}`),
-      '',
-      `Subtotal: ${money(result.subtotal)}`,
-      ...(discountPct > 0 ? [`Descuento (${discountPct}%): -${money(result.subtotal - discountedSubtotal)}`] : []),
-      `IVA estimado (${taxRate}%): ${money(estimatedTax)}`,
-      `TOTAL ESTIMADO CON IVA: ${money(estimatedTotal)}`,
-      '',
-      `Observación: ${result.message}`,
-    ].join('\n');
-
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(summaryText);
       window.alert('Cotización copiada al portapapeles.');
     } catch {
       window.alert('No fue posible copiar automáticamente. Verifica los permisos del navegador.');
     }
-  }, [selectedService, result, otherNote, estimatedTax, estimatedTotal, discountPct, discountedSubtotal, taxRate]);
+  }, [summaryText]);
+
+  const shareWhatsApp = useCallback(() => {
+    const url = `https://wa.me/?text=${encodeURIComponent(summaryText)}`;
+    const win = window.open(url, '_blank');
+    if (!win) window.location.href = url;
+  }, [summaryText]);
 
   /* Vista previa del PDF sin tener que guardar la cotización. */
   const previewPdf = useCallback(() => {
@@ -299,7 +416,7 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
       quote_number: 'PREVIA',
       created_at: new Date().toISOString(),
       status: 'draft',
-      customers: { full_name: 'Cliente (vista previa)' },
+      customers: { full_name: customerName || 'Cliente (vista previa)' },
       items: result.lines.map(line => ({
         item_type: line.itemType,
         description: `${line.description}${line.detail ? ` — ${line.detail}` : ''}`,
@@ -323,22 +440,54 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
     } catch {
       window.alert('No fue posible generar la vista previa del PDF.');
     }
-  }, [result, discountPct, taxRate, discountedSubtotal, estimatedTax, estimatedTotal]);
+  }, [result, discountPct, taxRate, discountedSubtotal, estimatedTax, estimatedTotal, customerName]);
+
+  /** Carga una plantilla o un cálculo del historial en el estado actual. */
+  const applyPayload = useCallback((payload: DraftInput) => {
+    if (payload.service && payload.service in SERVICES) setSelectedService(payload.service);
+    if (payload.system && payload.system in SYSTEMS) setSystem(payload.system);
+    setData({ ...INITIAL_FORM, ...payload.data });
+    setVideoCause(payload.videoCause ?? 'unknown');
+    setVideoMaterials(payload.videoMaterials ?? initItems(VIDEO_MATERIALS));
+    setMaintenanceMaterials(payload.maintenanceMaterials ?? initItems(MAINTENANCE_MATERIALS));
+    setDvrGroups(payload.dvrGroups?.length ? payload.dvrGroups : [createDvr('DVR / NVR 1', 'analog', false, 4)]);
+    setIgnoreCap(Boolean(payload.ignoreCap));
+    setCapReason(payload.capReason ?? '');
+    autoVideoMaterials.current = [];
+  }, []);
+
+  const handleSaveCurrent = useCallback((name: string) => {
+    setSavedList(addSaved(name, draftPayload(), 'template'));
+  }, [draftPayload]);
+
+  const handleLoadSaved = useCallback((item: SavedCalculation) => {
+    applyPayload(item.payload);
+    setShowSaved(false);
+  }, [applyPayload]);
+
+  const handleDeleteSaved = useCallback((id: string) => {
+    setSavedList(removeSaved(id));
+  }, []);
 
   const handleReset = useCallback(() => {
     if (window.confirm('¿Empezar un cálculo nuevo? Se descarta el actual.')) resetCalculator();
   }, [resetCalculator]);
 
   return (
-    <Modal show={show} onHide={onHide} size="xl" centered scrollable dialogClassName="s24-service-calculator-modal">
+    <>
+      <Modal show={show} onHide={onHide} size="xl" centered scrollable dialogClassName="s24-service-calculator-modal">
       <Modal.Header closeButton className="border-bottom-0 pb-2">
-        <div className="d-flex align-items-center gap-3 w-100">
+        <div className="d-flex align-items-center gap-2 gap-md-3 flex-wrap w-100">
           <div className="rounded-3 bg-primary bg-opacity-10 text-primary p-2"><Calculator size={24} /></div>
           <div>
             <Modal.Title className="fw-bold">Calculadora de servicios CCTV</Modal.Title>
             <div className="small text-muted">S24 Seguridad Electrónica · Cotización preliminar</div>
           </div>
-          <Button variant="link" size="sm" className="ms-auto me-4 text-decoration-none text-nowrap"
+          <Button variant="link" size="sm" className="ms-auto text-decoration-none text-nowrap"
+            onClick={() => setShowSaved(true)} title="Plantillas e historial de cálculos">
+            <Bookmark size={14} className="me-1" /> Cálculos
+          </Button>
+          <Button variant="link" size="sm" className="me-4 text-decoration-none text-nowrap"
             onClick={handleReset} title="Empezar un cálculo nuevo">
             <RotateCcw size={14} className="me-1" /> Nuevo cálculo
           </Button>
@@ -412,12 +561,35 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
                       </div>
 
                       <Alert variant="info" className="py-2 px-3 small mb-3 border-info bg-info bg-opacity-10">
-                        <strong>Tope de mano de obra por cámara:</strong> {money(laborCap)}
-                        <br />
-                        <span className="text-muted">
-                          Ajustado automáticamente según {camerasWithWork} cámara(s) con mano de obra ({laborTier.note}).
-                          El cambio de cableado se cobra aparte y no consume este tope.
-                        </span>
+                        <div className="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                          <div>
+                            <strong>Tope de mano de obra por cámara:</strong> {ignoreCap ? 'no aplicado' : money(laborCap)}
+                            <br />
+                            <span className="text-muted">
+                              Ajustado automáticamente según {camerasWithWork} cámara(s) con mano de obra ({laborTier.note}).
+                              El cambio de cableado se cobra aparte y no consume este tope.
+                            </span>
+                          </div>
+                          <Form.Check
+                            type="switch"
+                            id="ignore-labor-cap"
+                            className="flex-shrink-0"
+                            checked={ignoreCap}
+                            onChange={event => setIgnoreCap(event.target.checked)}
+                            label={<span className="small fw-semibold">No aplicar tope</span>}
+                          />
+                        </div>
+                        {ignoreCap && (
+                          <Form.Control
+                            size="sm"
+                            className="mt-2"
+                            placeholder="Motivo de la autorización (queda en el detalle de la cotización)"
+                            value={capReason}
+                            maxLength={120}
+                            onChange={event => setCapReason(event.target.value)}
+                            aria-label="Motivo para no aplicar el tope"
+                          />
+                        )}
                       </Alert>
 
                       {dvrGroups.map(dvr => (
@@ -491,6 +663,12 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
                   <Col md={3}><NumField id="service-travel" icon={MapPin} prefix="$" label="Desplazamiento" {...bind('travel')} /></Col>
                   <Col md={3}><NumField id="service-materials" icon={Package} prefix="$" label="Otros materiales" {...bind('materials')} /></Col>
                   <Col md={3}><NumField id="service-extra-labor" icon={Clock3} prefix="$" label="Mano de obra extra" {...bind('extraLabor')} /></Col>
+
+                  {SURCHARGES.map(({ key, label }) => (
+                    <Col md={4} key={key}>
+                      <NumField id={`service-${key}`} icon={Clock3} prefix="%" label={`Recargo ${label.toLowerCase()}`} {...bind(key)} />
+                    </Col>
+                  ))}
                 </Row>
               </Card.Body>
             </Card>
@@ -506,7 +684,10 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
                 </Button>
               </Card.Header>
               {showPrices && (
-                <PriceSettings prices={prices} taxRate={taxRate} onChange={updatePrice} onTaxRateChange={updateTaxRate} onReset={resetPrices} />
+                <PriceSettings prices={prices} taxRate={taxRate} maxDiscount={priceData.maxDiscount}
+                  syncStatus={syncStatus}
+                  onChange={updatePrice} onTaxRateChange={updateTaxRate}
+                  onMaxDiscountChange={updateMaxDiscount} onReset={resetPrices} />
               )}
             </Card>
           </Col>
@@ -522,6 +703,16 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
                 </Step>
               </Card.Header>
               <Card.Body className="d-flex flex-column">
+                {warnings.length > 0 && (
+                  <Alert variant="warning" className="py-2 px-3 small">
+                    <strong>Revisa antes de cotizar:</strong>
+                    <ul className="mb-0 ps-3 mt-1">
+                      {warnings.slice(0, 5).map((warning, index) => <li key={index}>{warning}</li>)}
+                      {warnings.length > 5 && <li>y {warnings.length - 5} aviso(s) más…</li>}
+                    </ul>
+                  </Alert>
+                )}
+
                 <Alert variant={result.direct ? 'success' : 'warning'} className="border-0">
                   <div className="d-flex align-items-start gap-2">
                     <ClipboardList size={19} className="flex-shrink-0 mt-1" />
@@ -570,6 +761,9 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
                   <Button variant="outline-primary" className="w-100 mt-2" onClick={previewPdf}>
                     <Eye size={16} className="me-2" />Vista previa del PDF
                   </Button>
+                  <Button variant="outline-success" className="w-100 mt-2" onClick={shareWhatsApp}>
+                    <Send size={16} className="me-2" />Enviar por WhatsApp
+                  </Button>
                   <Button variant="outline-secondary" className="w-100 mt-2" onClick={copyQuote}>
                     <Copy size={16} className="me-2" />Copiar resumen
                   </Button>
@@ -583,5 +777,15 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
         </Row>
       </Modal.Body>
     </Modal>
+
+      <SavedCalculationsModal
+        show={showSaved}
+        onHide={() => setShowSaved(false)}
+        items={savedList}
+        onSaveCurrent={handleSaveCurrent}
+        onLoad={handleLoadSaved}
+        onDelete={handleDeleteSaved}
+      />
+    </>
   );
 }

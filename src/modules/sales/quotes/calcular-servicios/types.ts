@@ -17,6 +17,8 @@ export interface CalcularServiciosProps {
   show: boolean;
   onHide: () => void;
   onAddItems: (items: QuoteItem[]) => void;
+  /** Nombre del cliente de la cotización, para la vista previa del PDF. */
+  customerName?: string;
 }
 
 export type ItemType = 'service' | 'product';
@@ -46,12 +48,16 @@ export interface CameraGroup {
   expanded: boolean; active: boolean; distance: string; height: string;
   cableDistance: string; cableHeight: string;
   difficulties: Difficulties;
+  /** Observación del técnico sobre esta cámara. Viaja a la cotización. */
+  note?: string;
 }
 
 export interface DvrGroup {
   id: string; label: string; included: boolean; active: boolean;
   distance: string; height: string; channels: string; photos: string[];
   difficulties: Difficulties; maintenance: Items; cameras: CameraGroup[];
+  /** Observación del técnico sobre este grabador. */
+  note?: string;
 }
 
 export type VideoCause = 'balun' | 'power' | 'splice' | 'cable' | 'camera' | 'dvr-channel' | 'unknown';

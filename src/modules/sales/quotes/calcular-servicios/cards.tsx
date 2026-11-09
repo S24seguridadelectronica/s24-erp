@@ -1,7 +1,7 @@
-import { memo, useCallback, useMemo } from 'react';
-import { Badge, Button, Card, Col, Form, Row } from 'react-bootstrap';
+import { memo, useCallback, useMemo, useState } from 'react';
+import { Badge, Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
 import {
-  AlertTriangle, ArrowUp, Camera, ChevronDown, ChevronUp, HardDrive, MapPin, PlusCircle, Ruler, Trash2, Video, Wrench,
+  AlertTriangle, ArrowUp, Camera, ChevronDown, ChevronUp, Copy, HardDrive, MapPin, PlusCircle, Ruler, Trash2, Video, Wrench,
 } from 'lucide-react';
 import { CAMERA_DIFFICULTIES, DVR_DIFFICULTIES, SYSTEMS } from './catalog';
 import type { Prices, SystemType } from './catalog';
@@ -20,6 +20,8 @@ export interface Actions {
   patchDvrDifficulty: (id: string, key: string, patch: Partial<DifficultyState>) => void;
   patchDvrTask: (id: string, key: string, patch: Partial<MaterialState>) => void;
   addCamera: (dvrId: string, system: SystemType) => void;
+  addCameras: (dvrId: string, count: number, system: SystemType) => void;
+  applyCameraToAll: (dvrId: string, camId: string) => void;
   updateCamera: (dvrId: string, camId: string, patch: Partial<CameraGroup>) => void;
   removeCamera: (dvrId: string, camId: string) => void;
   patchCameraTask: (dvrId: string, camId: string, key: string, patch: Partial<MaterialState>) => void;
@@ -28,9 +30,11 @@ export interface Actions {
 
 export interface CameraCardProps {
   dvrId: string; cam: CameraGroup; system: SystemType; prices: Prices; actions: Actions;
+  /** Hay más cámaras en el grabador a las que se puede copiar la configuración. */
+  canApplyToAll?: boolean;
 }
 
-export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices, actions }: CameraCardProps) {
+export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices, actions, canApplyToAll = false }: CameraCardProps) {
   const tasks = SYSTEMS[system].cameraTasks;
   const acc = useMemo(() => cameraAccess(cam, prices), [cam, prices]);
   const cable = useMemo(
@@ -84,6 +88,13 @@ export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices,
             <span className="small text-muted ms-2 text-truncate" style={{ maxWidth: 250 }}>{summary}</span>
           )}
         </div>
+        {canApplyToAll && (
+          <Button variant="outline-secondary" size="sm" className="me-1"
+            title="Aplicar tareas, distancias y dificultades a las demás cámaras"
+            onClick={e => { e.stopPropagation(); actions.applyCameraToAll(dvrId, cam.id); }}>
+            <Copy size={14} />
+          </Button>
+        )}
         <Button variant="outline-danger" size="sm"
           onClick={e => { e.stopPropagation(); actions.removeCamera(dvrId, cam.id); }}>
           <Trash2 size={14} />
@@ -92,6 +103,17 @@ export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices,
 
       {cam.expanded && (
         <Card.Body className="bg-light" style={{ pointerEvents: cam.active ? 'auto' : 'none' }}>
+          <Form.Group className="mb-3" controlId={`cam-note-${cam.id}`}>
+            <Form.Label className="small fw-semibold">Observación del técnico (opcional)</Form.Label>
+            <Form.Control
+              as="textarea" rows={2} maxLength={200}
+              value={cam.note ?? ''}
+              disabled={!cam.active}
+              onChange={e => set({ note: e.target.value })}
+              placeholder="Ej: cámara 3 no enciende, cable cortado en el techo"
+            />
+          </Form.Group>
+
           <ItemRows
             defs={tasks} state={cam.tasks} disabled={!cam.active}
             patch={patchTask}
@@ -189,10 +211,17 @@ export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, a
     [actions, dvr.id],
   );
   const addCamera = useCallback(() => actions.addCamera(dvr.id, system), [actions, dvr.id, system]);
+  const [newCameraCount, setNewCameraCount] = useState('1');
+
+  const addCameras = useCallback(() => {
+    const count = Math.max(1, Math.min(20, Number(newCameraCount) || 1));
+    actions.addCameras(dvr.id, count, system);
+    setNewCameraCount('1');
+  }, [actions, dvr.id, system, newCameraCount]);
 
   return (
     <Card className={`mb-4 border-0 shadow-sm ${!dvr.active ? 'opacity-50' : ''}`}>
-      <Card.Header className="bg-primary bg-opacity-10 border-bottom d-flex justify-content-between align-items-center py-2">
+      <Card.Header className="bg-primary bg-opacity-10 border-bottom d-flex justify-content-between align-items-center py-2 flex-wrap gap-2">
         <div className="d-flex align-items-center gap-2">
           <Form.Check type="switch" id={`dvr-active-${dvr.id}`} checked={dvr.active}
             onChange={e => set({ active: e.target.checked })}
@@ -201,14 +230,37 @@ export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, a
           <Form.Control size="sm" style={{ maxWidth: 200 }} value={dvr.label} disabled={!dvr.active}
             onChange={e => set({ label: e.target.value })} placeholder={`Ej: ${deviceName} Principal`} />
         </div>
-        {canRemove && (
-          <Button variant="outline-danger" size="sm" onClick={() => actions.removeDvr(dvr.id)}>
-            <Trash2 size={14} className="me-1" /> Eliminar
-          </Button>
-        )}
+        <div className="d-flex align-items-center gap-2">
+          <InputGroup size="sm" style={{ maxWidth: 180 }}>
+            <Form.Control
+              type="number" min={1} max={20} value={newCameraCount}
+              onChange={e => setNewCameraCount(e.target.value)}
+              aria-label="Cantidad de cámaras a agregar"
+            />
+            <Button variant="outline-secondary" onClick={addCameras} title="Agregar varias cámaras">
+              <PlusCircle size={14} className="me-1" /> Cámaras
+            </Button>
+          </InputGroup>
+          {canRemove && (
+            <Button variant="outline-danger" size="sm" onClick={() => actions.removeDvr(dvr.id)}>
+              <Trash2 size={14} className="me-1" /> Eliminar
+            </Button>
+          )}
+        </div>
       </Card.Header>
 
       <Card.Body className="bg-white" style={{ pointerEvents: dvr.active ? 'auto' : 'none' }}>
+        <Form.Group className="mb-3" controlId={`dvr-note-${dvr.id}`}>
+          <Form.Label className="small fw-semibold">Observación del técnico (opcional)</Form.Label>
+          <Form.Control
+            as="textarea" rows={2} maxLength={200}
+            value={dvr.note ?? ''}
+            disabled={!dvr.active}
+            onChange={e => set({ note: e.target.value })}
+            placeholder="Ej: grabador en rack, sin espacio lateral"
+          />
+        </Form.Group>
+
         <div className="mb-4 p-3 border rounded bg-light">
           <div className="d-flex justify-content-between align-items-center mb-2">
             <Form.Check type="checkbox" checked={dvr.included} disabled={!dvr.active}
@@ -281,7 +333,8 @@ export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, a
             No hay cámaras agregadas a este grabador.
           </div>
         ) : dvr.cameras.map(cam => (
-          <CameraCard key={cam.id} dvrId={dvr.id} cam={cam} system={system} prices={prices} actions={actions} />
+          <CameraCard key={cam.id} dvrId={dvr.id} cam={cam} system={system} prices={prices} actions={actions}
+            canApplyToAll={dvr.cameras.length > 1} />
         ))}
       </Card.Body>
     </Card>

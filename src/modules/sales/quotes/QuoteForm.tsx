@@ -379,7 +379,8 @@ export function QuoteForm({ show, onHide, quote, preselectedOpportunity, onSucce
         </Modal.Footer>
       </Form>
       <CctvCalculatorModal show={showCalcModal} onHide={() => setShowCalcModal(false)} onAddItems={handleAddCalculatedItems} />
-      <CalcularServicios show={showServiceModal} onHide={() => setShowServiceModal(false)} onAddItems={handleAddCalculatedItems} />
+      <CalcularServicios show={showServiceModal} onHide={() => setShowServiceModal(false)}
+        onAddItems={handleAddCalculatedItems} customerName={selectedCustomerData?.full_name} />
     </Modal>
   );
 }

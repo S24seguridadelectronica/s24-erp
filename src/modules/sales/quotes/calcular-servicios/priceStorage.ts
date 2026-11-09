@@ -4,7 +4,7 @@ import type { Prices } from './catalog';
 import { nonNegative } from './calc';
 
 /* -------------------------------------------------------------------------
- * Persistencia de precios + IVA
+ * Persistencia de precios + IVA + descuento máximo
  * -------------------------------------------------------------------------
  * Nivel 1 (local): localStorage del dispositivo, disponible sin conexión.
  * Nivel 2 (empresa): tabla `site_settings` con `setting_key = 'quote_calculator_prices'`.
@@ -14,13 +14,20 @@ import { nonNegative } from './calc';
 export interface StoredPriceData {
   prices: Prices;
   taxRate: number;
+  /** Descuento máximo autorizado sin aprobación (%). */
+  maxDiscount: number;
 }
 
 const STORAGE_KEY = 's24.quoteCalculator.prices.v2';
 const REMOTE_KEY = 'quote_calculator_prices';
 const DEFAULT_TAX_RATE = 19;
+const DEFAULT_MAX_DISCOUNT = 20;
 
-const DEFAULT_DATA: StoredPriceData = { prices: { ...DEFAULT_PRICES }, taxRate: DEFAULT_TAX_RATE };
+const DEFAULT_DATA: StoredPriceData = {
+  prices: { ...DEFAULT_PRICES },
+  taxRate: DEFAULT_TAX_RATE,
+  maxDiscount: DEFAULT_MAX_DISCOUNT,
+};
 
 const normalizePrices = (raw: unknown): Prices =>
   Object.fromEntries(
@@ -32,6 +39,9 @@ const normalizeTaxRate = (raw: unknown): number => {
   return value > 0 ? Math.min(100, value) : DEFAULT_TAX_RATE;
 };
 
+const normalizeMaxDiscount = (raw: unknown): number =>
+  raw == null ? DEFAULT_MAX_DISCOUNT : Math.min(100, nonNegative(raw));
+
 export const readStoredPrices = (): StoredPriceData => {
   try {
     if (typeof localStorage === 'undefined') return { ...DEFAULT_DATA, prices: { ...DEFAULT_PRICES } };
@@ -40,12 +50,16 @@ export const readStoredPrices = (): StoredPriceData => {
 
     const parsed: unknown = JSON.parse(raw);
     if (parsed && typeof parsed === 'object' && 'prices' in (parsed as Record<string, unknown>)) {
-      const obj = parsed as { prices?: unknown; taxRate?: unknown };
-      return { prices: normalizePrices(obj.prices), taxRate: normalizeTaxRate(obj.taxRate) };
+      const obj = parsed as { prices?: unknown; taxRate?: unknown; maxDiscount?: unknown };
+      return {
+        prices: normalizePrices(obj.prices),
+        taxRate: normalizeTaxRate(obj.taxRate),
+        maxDiscount: normalizeMaxDiscount(obj.maxDiscount),
+      };
     }
 
     // Formato v1: solo el objeto de precios.
-    return { prices: normalizePrices(parsed), taxRate: DEFAULT_TAX_RATE };
+    return { prices: normalizePrices(parsed), taxRate: DEFAULT_TAX_RATE, maxDiscount: DEFAULT_MAX_DISCOUNT };
   } catch {
     return { ...DEFAULT_DATA, prices: { ...DEFAULT_PRICES } };
   }
@@ -60,10 +74,24 @@ export const writeStoredPrices = (data: StoredPriceData): void => {
   }
 };
 
+/** Cliente mínimo tipado para no depender del genérico incompleto de la base. */
+interface SiteSettingsClient {
+  from(table: 'site_settings'): {
+    select(columns: string): {
+      eq(column: string, value: string): {
+        maybeSingle(): Promise<{ data: { setting_value: unknown } | null; error: { message: string } | null }>;
+      };
+    };
+    upsert(values: Record<string, unknown>, options: { onConflict: string }): Promise<{ error: { message: string } | null }>;
+  };
+}
+
+const siteSettings = supabase as unknown as SiteSettingsClient;
+
 /** Carga la configuración compartida de la empresa (si existe). */
 export async function loadRemotePriceData(): Promise<StoredPriceData | null> {
   try {
-    const { data, error } = await (supabase as any)
+    const { data, error } = await siteSettings
       .from('site_settings')
       .select('setting_value')
       .eq('setting_key', REMOTE_KEY)
@@ -71,17 +99,21 @@ export async function loadRemotePriceData(): Promise<StoredPriceData | null> {
 
     if (error || !data?.setting_value) return null;
 
-    const value = data.setting_value as { prices?: unknown; taxRate?: unknown };
-    return { prices: normalizePrices(value?.prices), taxRate: normalizeTaxRate(value?.taxRate) };
+    const value = data.setting_value as { prices?: unknown; taxRate?: unknown; maxDiscount?: unknown };
+    return {
+      prices: normalizePrices(value?.prices),
+      taxRate: normalizeTaxRate(value?.taxRate),
+      maxDiscount: normalizeMaxDiscount(value?.maxDiscount),
+    };
   } catch {
     return null;
   }
 }
 
-/** Sincroniza la configuración hacia la empresa (mejor esfuerzo). */
-export async function saveRemotePriceData(data: StoredPriceData): Promise<void> {
+/** Sincroniza la configuración hacia la empresa. Devuelve si se guardó. */
+export async function saveRemotePriceData(data: StoredPriceData): Promise<boolean> {
   try {
-    const { error } = await (supabase as any)
+    const { error } = await siteSettings
       .from('site_settings')
       .upsert(
         { setting_key: REMOTE_KEY, setting_value: data, updated_at: new Date().toISOString() },
@@ -90,8 +122,11 @@ export async function saveRemotePriceData(data: StoredPriceData): Promise<void> 
 
     if (error) {
       console.warn('[precios] No se pudo sincronizar con site_settings:', error.message);
+      return false;
     }
+    return true;
   } catch (err) {
     console.warn('[precios] Error sincronizando con site_settings:', err);
+    return false;
   }
 }

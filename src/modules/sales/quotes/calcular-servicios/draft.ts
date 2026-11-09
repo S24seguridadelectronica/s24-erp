@@ -19,6 +19,9 @@ export interface CalculatorDraft {
   videoMaterials: Items;
   maintenanceMaterials: Items;
   dvrGroups: DvrGroup[];
+  /** El tope de mano de obra se desactiva a propósito, con su motivo. */
+  ignoreCap?: boolean;
+  capReason?: string;
 }
 
 export type DraftInput = Omit<CalculatorDraft, 'version' | 'savedAt'>;

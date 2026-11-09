@@ -180,8 +180,17 @@ export const DEVICE_SERVICES: ServiceKey[] = ['reset', 'configuration', 'remote'
 export const CAUSE_SERVICES: ServiceKey[] = ['power', 'recording'];
 export const INTERNET_SERVICES: ServiceKey[] = ['remote', 'app'];
 
+/** Recargos comerciales opcionales (porcentaje sobre la mano de obra). */
+export const SURCHARGES = [
+  { key: 'urgency', label: 'Urgencia', hint: 'Atención inmediata' },
+  { key: 'night', label: 'Nocturno', hint: 'Después de 6:00 p. m.' },
+  { key: 'sunday', label: 'Dominical / festivo', hint: 'Domingos y festivos' },
+] as const;
+export type SurchargeKey = (typeof SURCHARGES)[number]['key'];
+
 export const INITIAL_FORM = {
   device: 'DVR', knownCause: 'yes', affected: '1', internet: 'yes', otherText: '',
   travel: '20000', materials: '0', extraLabor: '0', discount: '0',
+  urgency: '0', night: '0', sunday: '0',
 };
 export type ServiceForm = typeof INITIAL_FORM;
