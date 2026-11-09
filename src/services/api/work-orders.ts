@@ -1,4 +1,4 @@
-﻿import { supabase } from '../supabase/client';
+import { supabase } from '../supabase/client';
 import { audit } from './audit';
 
 export interface WorkOrderMaterial {
@@ -53,6 +53,92 @@ export async function getWorkOrderById(id: number) {
   return data as any;
 }
 
+export async function getWorkOrdersByCustomer(customerId: number) {
+  const { data, error } = await (supabase as any)
+    .from('work_orders')
+    .select('*')
+    .eq('customer_id', customerId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
+/** Orden de trabajo generada desde una cotización (el id de la cotización se guarda en sale_id). */
+export async function getWorkOrderByQuoteId(quoteId: number) {
+  const { data, error } = await (supabase as any)
+    .from('work_orders')
+    .select('*')
+    .eq('sale_id', quoteId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+/**
+ * Crea la orden de trabajo a partir de una cotización aprobada.
+ * Si ya existe una para esa cotización, la devuelve sin duplicar.
+ */
+export async function createWorkOrderFromQuote(quoteId: number) {
+  const existing = await getWorkOrderByQuoteId(quoteId);
+  if (existing) return { order: existing, created: false };
+
+  const { data: quote, error: quoteError } = await (supabase as any)
+    .from('quotes')
+    .select('*, customers(full_name, company_name, address, contact_person, phone)')
+    .eq('id', quoteId)
+    .single();
+
+  if (quoteError || !quote) throw quoteError || new Error('No se encontró la cotización');
+
+  const { data: items } = await (supabase as any)
+    .from('quote_items')
+    .select('description')
+    .eq('quote_id', quoteId);
+
+  const descriptions = (items || []).map((item: any) => String(item.description || '')).join(' | ');
+  const serviceType = /mantenimiento|accesibilidad|cableado|cámara|camara/.test(descriptions.toLowerCase())
+    ? 'Mantenimiento Preventivo'
+    : 'Instalación de CCTV';
+
+  const description = `Generada desde cotización ${quote.quote_number}. Conceptos: ` +
+    (descriptions ? descriptions.slice(0, 400) : 'sin detalle');
+
+  const orderNumber = await getNextWorkOrderNumber();
+
+  const { data: order, error: orderError } = await (supabase as any)
+    .from('work_orders')
+    .insert([{
+      order_number: orderNumber,
+      customer_id: quote.customer_id,
+      sale_id: quoteId,
+      service_type: serviceType,
+      description,
+      address: quote.customers?.address || null,
+      contact_name: quote.customers?.contact_person || quote.customers?.full_name || null,
+      contact_phone: quote.customers?.phone || null,
+      status: 'scheduled',
+      priority: 'medium',
+      materials_cost: 0,
+      labor_cost: quote.total || 0,
+      total_cost: quote.total || 0,
+    }])
+    .select()
+    .single();
+
+  if (orderError || !order) throw orderError || new Error('No se pudo crear la orden de trabajo');
+
+  await audit.log(
+    'CREATE',
+    'work_orders',
+    String(order.id),
+    `Orden generada desde cotización ${quote.quote_number}: ${order.order_number}`
+  );
+
+  return { order, created: true };
+}
+
 export async function createWorkOrder(order: any, items: Omit<WorkOrderMaterial, 'id' | 'work_order_id'>[]) {
   const orderData = {
     order_number: order.order_number,
@@ -97,10 +183,10 @@ export async function createWorkOrder(order: any, items: Omit<WorkOrderMaterial,
     if (itemsError) throw itemsError;
   }
 
-  await audit.create(
+  await audit.log(
+    'CREATE',
     'work_orders',
     String(orderResult.id),
-    orderResult,
     `Orden de trabajo creada: ${orderResult.order_number}`
   );
 
@@ -143,11 +229,10 @@ export async function updateWorkOrder(id: number, order: any) {
   
   if (error) throw error;
 
-  await audit.update(
+  await audit.log(
+    'UPDATE',
     'work_orders',
     String(id),
-    oldData,
-    data,
     `Orden de trabajo actualizada: ${data.order_number}`
   );
 
@@ -167,10 +252,10 @@ export async function deleteWorkOrder(id: number) {
   const { error: orderError } = await supabase.from('work_orders').delete().eq('id', id);
   if (orderError) throw orderError;
 
-  await audit.delete(
+  await audit.log(
+    'DELETE',
     'work_orders',
     String(id),
-    oldData,
     `Orden de trabajo eliminada: ${oldData?.order_number || 'Desconocida'}`
   );
   

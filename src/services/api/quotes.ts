@@ -1,4 +1,4 @@
-﻿import { supabase } from '../supabase/client';
+import { supabase } from '../supabase/client';
 import { audit } from './audit';
 
 export interface QuoteItem {
@@ -11,6 +11,44 @@ export interface QuoteItem {
   discount?: number;
   tax_rate?: number;
   total?: number;
+  /** Evidencia fotográfica en base64 (data:image/...). Se imprime en el PDF. */
+  photo?: string | null;
+  /** Desglose estructurado del cálculo (categoría, topes, metros) para auditoría. */
+  detail?: Record<string, unknown> | null;
+}
+
+/** Se lanza cuando faltan columnas opcionales (photo/detail) en quote_items. */
+const isMissingItemColumn = (error: any): boolean => {
+  if (!error) return false;
+  const code = String(error.code || '');
+  const message = String(error.message || '');
+  return code === 'PGRST204' || code === '42703' || /column .*(photo|detail).* (does not exist|schema cache)/i.test(message);
+};
+
+/**
+ * Inserta los ítems de una cotización.
+ * Devuelve `false` si faltó alguna columna opcional (photo/detail) y hubo que
+ * guardar sin ellas, para que la UI pueda avisarlo.
+ */
+async function insertQuoteItems(rows: any[]): Promise<boolean> {
+  const { error } = await (supabase as any).from('quote_items').insert(rows);
+  if (!error) return true;
+
+  if (!isMissingItemColumn(error)) throw error;
+
+  console.warn(
+    '[quotes] Falta alguna columna opcional en quote_items (photo/detail). ' +
+    'Ejecuta las migraciones 002 y 004 en Supabase. Se guardan los ítems sin esos datos.',
+  );
+  const rowsWithoutOptional = rows.map(row => {
+    const copy = { ...row };
+    delete copy.photo;
+    delete copy.detail;
+    return copy;
+  });
+  const { error: retryError } = await (supabase as any).from('quote_items').insert(rowsWithoutOptional);
+  if (retryError) throw retryError;
+  return false;
 }
 
 export interface Quote {
@@ -62,6 +100,29 @@ export async function getQuotes() {
   return data || [];
 }
 
+/** Ítems de una cotización, con sus fotos de evidencia incluidas. */
+export async function getQuoteItems(quoteId: number) {
+  const { data, error } = await (supabase as any)
+    .from('quote_items')
+    .select('*')
+    .eq('quote_id', quoteId)
+    .order('id', { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+}
+
+export async function getQuotesByCustomer(customerId: number) {
+  const { data, error } = await (supabase as any)
+    .from('quotes')
+    .select('*')
+    .eq('customer_id', customerId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
 export async function getQuoteById(id: number) {
   const { data, error } = await (supabase as any)
     .from('quotes')
@@ -98,6 +159,8 @@ export async function createQuote(quote: any, items: any[]) {
   
   if (quoteError || !quoteData_result) throw quoteError || new Error("No se pudo crear la cotización");
 
+  let photosSaved = true;
+
   if (items && items.length > 0) {
     const itemsWithQuoteId: any[] = items.map((item: any) => ({
       quote_id: quoteData_result.id,
@@ -107,14 +170,12 @@ export async function createQuote(quote: any, items: any[]) {
       unit_price: item.unit_price,
       discount: item.discount || 0,
       tax_rate: item.tax_rate || 19,
-      total: (item.quantity * item.unit_price) * (1 - (item.discount || 0) / 100) * (1 + (item.tax_rate || 19) / 100)
+      total: (item.quantity * item.unit_price) * (1 - (item.discount || 0) / 100) * (1 + (item.tax_rate || 19) / 100),
+      photo: item.photo || null,
+      detail: item.detail || null
     }));
 
-    const { error: itemsError } = await (supabase as any)
-      .from('quote_items')
-      .insert(itemsWithQuoteId);
-    
-    if (itemsError) throw itemsError;
+    photosSaved = await insertQuoteItems(itemsWithQuoteId);
   }
 
   await audit.log(
@@ -124,7 +185,7 @@ export async function createQuote(quote: any, items: any[]) {
     `Cotización creada: ${quoteData_result.quote_number}`
   );
 
-  return quoteData_result;
+  return { ...quoteData_result, photosSaved };
 }
 
 export async function updateQuote(id: number, quote: any) {
@@ -156,6 +217,8 @@ export async function updateQuote(id: number, quote: any) {
   
   if (error || !data) throw error || new Error("No se pudo actualizar la cotización");
 
+  let photosSaved = true;
+
   if (items && Array.isArray(items)) {
     const { error: deleteItemsError } = await (supabase as any)
       .from('quote_items')
@@ -173,14 +236,12 @@ export async function updateQuote(id: number, quote: any) {
         unit_price: item.unit_price,
         discount: item.discount || 0,
         tax_rate: item.tax_rate || 19,
-        total: (item.quantity * item.unit_price) * (1 - (item.discount || 0) / 100) * (1 + (item.tax_rate || 19) / 100)
+        total: (item.quantity * item.unit_price) * (1 - (item.discount || 0) / 100) * (1 + (item.tax_rate || 19) / 100),
+        photo: item.photo || null,
+        detail: item.detail || null
       }));
 
-      const { error: insertItemsError } = await (supabase as any)
-        .from('quote_items')
-        .insert(itemsWithQuoteId);
-      
-      if (insertItemsError) throw insertItemsError;
+      photosSaved = await insertQuoteItems(itemsWithQuoteId);
     }
   }
 
@@ -191,7 +252,7 @@ export async function updateQuote(id: number, quote: any) {
     `Cotización actualizada: ${data.quote_number}`
   );
 
-  return data;
+  return { ...data, photosSaved };
 }
 
 export async function deleteQuote(id: number) {

@@ -28,6 +28,16 @@ export interface Database {
         Insert: { id?: number; quote_number: string; customer_id: number; salesperson_id?: string | null; opportunity_id?: number | null; status?: string; subtotal?: number; tax_amount?: number; discount_amount?: number; total?: number; valid_until?: string | null; terms?: string | null; notes?: string | null; created_at?: string; updated_at?: string }
         Update: { id?: number; quote_number?: string; customer_id?: number; salesperson_id?: string | null; opportunity_id?: number | null; status?: string; subtotal?: number; tax_amount?: number; discount_amount?: number; total?: number; valid_until?: string | null; terms?: string | null; notes?: string | null; created_at?: string; updated_at?: string }
       }
+      quote_items: {
+        Row: { id: number; quote_id: number; item_type: string; description: string; quantity: number; unit_price: number; discount: number; tax_rate: number; total: number; photo: string | null; detail: Json | null; created_at: string }
+        Insert: { id?: number; quote_id: number; item_type: string; description: string; quantity: number; unit_price: number; discount?: number; tax_rate?: number; total?: number; photo?: string | null; detail?: Json | null; created_at?: string }
+        Update: { id?: number; quote_id?: number; item_type?: string; description?: string; quantity?: number; unit_price?: number; discount?: number; tax_rate?: number; total?: number; photo?: string | null; detail?: Json | null; created_at?: string }
+      }
+      work_order_photos: {
+        Row: { id: number; work_order_id: number; caption: string | null; photo: string; created_by: string | null; created_at: string }
+        Insert: { id?: number; work_order_id: number; caption?: string | null; photo: string; created_by?: string | null; created_at?: string }
+        Update: { id?: number; work_order_id?: number; caption?: string | null; photo?: string; created_by?: string | null; created_at?: string }
+      }
       work_orders: {
         Row: { id: number; order_number: string; customer_id: number; sale_id: number | null; service_type: string; description: string | null; address: string | null; contact_name: string | null; contact_phone: string | null; assigned_to: string | null; scheduled_at: string | null; status: string; priority: string | null; materials_cost: number; labor_cost: number; total_cost: number; completed_at: string | null; notes: string | null; created_at: string; updated_at: string }
         Insert: { id?: number; order_number: string; customer_id: number; sale_id?: number | null; service_type: string; description?: string | null; address?: string | null; contact_name?: string | null; contact_phone?: string | null; assigned_to?: string | null; scheduled_at?: string | null; status?: string; priority?: string | null; materials_cost?: number; labor_cost?: number; total_cost?: number; completed_at?: string | null; notes?: string | null; created_at?: string; updated_at?: string }

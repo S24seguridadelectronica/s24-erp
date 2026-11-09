@@ -1,13 +1,90 @@
-﻿import { jsPDF } from 'jspdf';
+import { jsPDF } from 'jspdf';
 // @ts-ignore
 import autoTable from 'jspdf-autotable';
+import { parsePhotos } from '@/utils/quotePhotos';
+
+/**
+ * Añade una página con el registro fotográfico de las evidencias tomadas en la
+ * calculadora. Cada ítem puede traer varias fotos (JSON en `photo`).
+ * Las imágenes repetidas se imprimen una sola vez.
+ */
+function addPhotoSection(doc: any, items: any[]) {
+  const seen = new Set<string>();
+  const photos: { src: string; description: string }[] = [];
+
+  for (const item of items) {
+    for (const src of parsePhotos(item?.photo)) {
+      if (seen.has(src)) continue;
+      seen.add(src);
+      photos.push({ src, description: item.description || 'Evidencia' });
+    }
+  }
+
+  if (photos.length === 0) return;
+
+  const marginX = 14;
+  const cellWidth = 88;
+  const gapX = 6;
+  const maxImageHeight = 56;
+  const rowHeight = 74;
+
+  doc.addPage();
+  let y = 20;
+
+  const drawHeader = () => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(13, 42, 78);
+    doc.text('REGISTRO FOTOGRÁFICO', marginX, y);
+    doc.setDrawColor(255, 193, 7);
+    doc.setLineWidth(0.8);
+    doc.line(marginX, y + 3, 196, y + 3);
+    doc.setLineWidth(0.2);
+    y += 12;
+  };
+
+  drawHeader();
+
+  for (let i = 0; i < photos.length; i += 2) {
+    if (y + rowHeight > 282) {
+      doc.addPage();
+      y = 20;
+      drawHeader();
+    }
+
+    for (let column = 0; column < 2 && i + column < photos.length; column++) {
+      const photo = photos[i + column];
+      const x = marginX + column * (cellWidth + gapX);
+
+      try {
+        const format = photo.src.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+        const { width, height } = doc.getImageProperties(photo.src);
+        const scale = Math.min(cellWidth / width, maxImageHeight / height);
+        const imageWidth = width * scale;
+        const imageHeight = height * scale;
+
+        doc.addImage(photo.src, format, x + (cellWidth - imageWidth) / 2, y, imageWidth, imageHeight);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(90, 90, 90);
+        const caption = doc.splitTextToSize(`${i + column + 1}. ${photo.description}`, cellWidth);
+        doc.text(caption.slice(0, 2), x, y + imageHeight + 4);
+      } catch {
+        // Imagen inválida o formato no soportado: se omite sin romper el PDF.
+      }
+    }
+
+    y += rowHeight;
+  }
+}
 
 export function buildQuotePdf(quote: any): { doc: any; filename: string } {
   const doc = new jsPDF();
 
-  const primaryColor = [13, 42, 78];
-  const accentColor = [255, 193, 7];
-  const textColor = [51, 51, 51];
+  const primaryColor: [number, number, number] = [13, 42, 78];
+  const accentColor: [number, number, number] = [255, 193, 7];
+  const textColor: [number, number, number] = [51, 51, 51];
 
   // HEADER
   doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
@@ -139,6 +216,9 @@ export function buildQuotePdf(quote: any): { doc: any; filename: string } {
   doc.setFontSize(7);
   doc.setTextColor(128, 128, 128);
   doc.text('S24 Seguridad Electrónica - Tel: (601) 000-0000 - Email: info@s24.com.co - www.s24.com.co', 105, 290, { align: 'center' });
+
+  // REGISTRO FOTOGRÁFICO (si hay evidencias)
+  addPhotoSection(doc, items);
 
   const filename = 'Cotizacion_' + quote.quote_number + '_' + String(quote.customers?.full_name || 'cliente').replace(/[^a-zA-Z0-9-_]/g, '_') + '.pdf';
   return { doc, filename };

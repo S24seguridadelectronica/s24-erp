@@ -1,9 +1,10 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, Table, Button, Badge, Spinner, Alert, Form, InputGroup, Modal, Row, Col } from 'react-bootstrap';
 import { getQuotes, deleteQuote, updateQuote, createQuote } from '@/services/api/quotes';
-import { FileText, Search, Edit2, Trash2, Send, CheckCircle, XCircle, Copy, FileDown, Filter, Clock, MessageCircle, Award, Receipt } from 'lucide-react';
+import { FileText, Search, Edit2, Trash2, Send, CheckCircle, XCircle, Copy, FileDown, Filter, Clock, MessageCircle, Award, Receipt, Wrench } from 'lucide-react';
 import { QuoteForm } from './QuoteForm';
 import { generateQuotePdf } from '@/services/api/quotePdf';
+import { createWorkOrderFromQuote } from '@/services/api/work-orders';
 import { supabase } from '@/services/supabase/client';
 import { uploadQuotePdf, sendQuoteByEmail, sendQuoteByWhatsApp, logSend, getSendHistory } from '@/services/api/sendQuoteService';
 import { createReceivable, getNextInvoiceNumber } from '@/services/api/finance';
@@ -192,6 +193,17 @@ export function QuotesPage() {
     } catch (err: any) {
       console.error('Error generando factura:', err);
       alert('Error al generar factura: ' + (err.message || 'Error desconocido'));
+    }
+  };
+
+  const handleGenerateWorkOrder = async (quote: any) => {
+    try {
+      const { order, created } = await createWorkOrderFromQuote(quote.id);
+      window.alert(created
+        ? `Orden de trabajo creada: ${order.order_number}`
+        : `Ya existía una orden para esta cotización: ${order.order_number}`);
+    } catch (err: unknown) {
+      window.alert('No se pudo generar la orden de trabajo: ' + (err instanceof Error ? err.message : 'error desconocido'));
     }
   };
 
@@ -400,6 +412,9 @@ export function QuotesPage() {
                           )}
                           {quote.status === 'approved' && (
                             <>
+                              <Button variant="outline-success" size="sm" onClick={() => handleGenerateWorkOrder(quote)} title="Generar Orden de Trabajo">
+                                <Wrench size={14} />
+                              </Button>
                               <Button variant="outline-primary" size="sm" onClick={() => handleFacturar(quote)} title="Generar Factura">
                                 <Receipt size={14} className="me-1" /> Factura
                               </Button>

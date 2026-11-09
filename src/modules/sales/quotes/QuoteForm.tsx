@@ -1,16 +1,18 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Modal, Button, Form, Row, Col, Alert, Spinner, Table, Card } from 'react-bootstrap';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { createQuote, updateQuote, getNextQuoteNumber, type QuoteItem } from '@/services/api/quotes';
+import { createQuote, updateQuote, getNextQuoteNumber, getQuoteItems, type QuoteItem } from '@/services/api/quotes';
 import { getCustomers, updateCustomer } from '@/services/api/customers';
 import { getOpportunities, updateOpportunity } from '@/services/api/opportunities';
 import { getProducts } from '@/services/api/inventory';
 import { supabase } from '@/services/supabase/client';
-import { Plus, Trash2, Target, DollarSign, Calendar, MessageSquare, Wrench, FileBox, Calculator, User, Phone, MapPin, Building, FileText, Package } from 'lucide-react';
+import { Plus, Trash2, Target, DollarSign, Calendar, MessageSquare, Wrench, FileBox, Calculator, User, Phone, MapPin, Building, FileText, Package, X } from 'lucide-react';
 import { CctvCalculatorModal } from './CctvCalculatorModal';
-import { CalcularServicios } from './CalcularServicios';
+import { CalcularServicios } from './calcular-servicios/CalcularServicios';
+import { createWorkOrderFromQuote } from '@/services/api/work-orders';
+import { parsePhotos } from '@/utils/quotePhotos';
 
 const schema = z.object({
   quote_number: z.string().min(1, 'Número es requerido'),
@@ -68,7 +70,10 @@ export function QuoteForm({ show, onHide, quote, preselectedOpportunity, onSucce
         if (quote) {
           const { data: fullQuote } = await (supabase.from('quotes') as any).select('*, items(*)').eq('id', quote.id).single();
           reset({ ...quote, valid_until: quote.valid_until ? quote.valid_until.split('T')[0] : '', opportunity_id: quote.opportunity_id || undefined, internal_notes: quote.internal_notes || '' });
-          setItems(fullQuote?.items || []);
+          // El embed 'items' depende del alias de la relación en PostgREST: si no
+          // devuelve nada, se leen los ítems directamente para no perder las fotos.
+          const embeddedItems = Array.isArray(fullQuote?.items) ? fullQuote.items : [];
+          setItems(embeddedItems.length > 0 ? embeddedItems : await getQuoteItems(quote.id));
           if (quote.customer_id) { 
             // Nota: customers se cargará asíncronamente, si no está listo inmediatamente, 
             // el useEffect de más abajo (watchedCustomerId) lo manejará cuando el usuario interactúe o se cargue.
@@ -161,7 +166,9 @@ export function QuoteForm({ show, onHide, quote, preselectedOpportunity, onSucce
           quantity: Number(calcItem.quantity) || 1,
           unit_price: Number(calcItem.unit_price) || 0,
           discount: Number(calcItem.discount) || 0,
-          tax_rate: Number(calcItem.tax_rate) || 19
+          tax_rate: Number(calcItem.tax_rate) || 19,
+          photo: calcItem.photo || null,
+          detail: calcItem.detail || null
         });
       });
       return newItems;
@@ -199,10 +206,40 @@ export function QuoteForm({ show, onHide, quote, preselectedOpportunity, onSucce
       const quoteData = { ...data, subtotal: totals.subtotal, tax_amount: totals.taxAmount, discount_amount: totals.discountAmount, total: totals.total, salesperson_id: user?.id };
 
       // ✅ CORRECCIÓN CLAVE: Se envían también los 'items' para que se actualicen en la base de datos al editar
+      let photosSaved = true;
+      let savedQuote: { id?: number; photosSaved?: boolean } | null = null;
       if (quote?.id) {
-        await updateQuote(quote.id, { ...quoteData, items });
+        savedQuote = await updateQuote(quote.id, { ...quoteData, items });
+        photosSaved = savedQuote?.photosSaved !== false;
       } else {
-        await createQuote(quoteData, items);
+        savedQuote = await createQuote(quoteData, items);
+        photosSaved = savedQuote?.photosSaved !== false;
+      }
+
+      if (!photosSaved) {
+        window.alert(
+          'La cotización se guardó, pero las FOTOS NO.\n\n' +
+          'Falta la columna quote_items.photo en Supabase. Ejecuta la migración ' +
+          '002_quote_items_photo.sql en el SQL Editor y vuelve a guardar la cotización.\n\n' +
+          'Las cotizaciones guardadas antes de la migración no tienen foto: hay que volver a tomarla y guardar.',
+        );
+      }
+
+      if (data.status === 'approved' && savedQuote?.id) {
+        const generar = window.confirm('La cotización quedó APROBADA. ¿Generar la orden de trabajo del servicio ahora?');
+        if (generar) {
+          try {
+            const { order, created } = await createWorkOrderFromQuote(savedQuote.id);
+            window.alert(created
+              ? `Orden de trabajo creada: ${order.order_number}`
+              : `Ya existía una orden para esta cotización: ${order.order_number}`);
+          } catch (err: unknown) {
+            window.alert(
+              'La cotización se guardó, pero no se pudo generar la orden de trabajo: ' +
+              (err instanceof Error ? err.message : 'error desconocido'),
+            );
+          }
+        }
       }
 
       if (selectedCustomerData && data.customer_id) {
@@ -300,7 +337,12 @@ export function QuoteForm({ show, onHide, quote, preselectedOpportunity, onSucce
               {items.map((item, index) => (
                 <tr key={index}>
                   <td><Form.Select value={item.item_type} onChange={(e) => updateItem(index, 'item_type', e.target.value)}><option value="product">Producto</option><option value="service">Servicio</option></Form.Select></td>
-                  <td><Form.Control value={item.description} onChange={(e) => updateItem(index, 'description', e.target.value)} placeholder="Descripción" /></td>
+                  <td>
+                    <Form.Control value={item.description} onChange={(e) => updateItem(index, 'description', e.target.value)} placeholder="Descripción" />
+                    {item.photo && (
+                      <ItemPhotos value={item.photo} onRemove={() => updateItem(index, 'photo', null)} />
+                    )}
+                  </td>
                   <td><Form.Control type="number" min="1" value={item.quantity} onChange={(e) => updateItem(index, 'quantity', parseFloat(e.target.value) || 0)} /></td>
                   <td><Form.Control type="number" min="0" value={item.unit_price} onChange={(e) => updateItem(index, 'unit_price', parseFloat(e.target.value) || 0)} /></td>
                   <td><Form.Control type="number" min="0" max="100" value={item.discount || 0} onChange={(e) => updateItem(index, 'discount', parseFloat(e.target.value) || 0)} /></td>
@@ -337,5 +379,24 @@ export function QuoteForm({ show, onHide, quote, preselectedOpportunity, onSucce
       <CctvCalculatorModal show={showCalcModal} onHide={() => setShowCalcModal(false)} onAddItems={handleAddCalculatedItems} />
       <CalcularServicios show={showServiceModal} onHide={() => setShowServiceModal(false)} onAddItems={handleAddCalculatedItems} />
     </Modal>
+  );
+}
+
+/** Miniaturas de las fotos de evidencia de un ítem de la cotización. */
+function ItemPhotos({ value, onRemove }: { value: string; onRemove: () => void }) {
+  const photos = parsePhotos(value);
+  if (photos.length === 0) return null;
+
+  return (
+    <div className="d-flex flex-wrap align-items-center gap-2 mt-1">
+      {photos.slice(0, 4).map((src, index) => (
+        <img key={index} src={src} alt={`Evidencia ${index + 1}`} className="border rounded"
+          style={{ height: 34, width: 46, objectFit: 'cover' }} />
+      ))}
+      {photos.length > 4 && <span className="small text-muted">+{photos.length - 4}</span>}
+      <Button variant="link" size="sm" className="p-0 text-danger" onClick={onRemove}>
+        <X size={12} /> Quitar fotos
+      </Button>
+    </div>
   );
 }

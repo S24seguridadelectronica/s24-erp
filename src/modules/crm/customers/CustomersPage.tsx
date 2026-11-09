@@ -1,10 +1,11 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, Button, Form, Badge, Modal, Row, Col } from 'react-bootstrap';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/services/supabase/client';
 import { getCustomers, createCustomer, updateCustomer, deleteCustomer } from '@/services/api/customers';
 import { OpportunityForm } from '@/modules/crm/opportunities/OpportunityForm';
-import { UserPlus, Edit, Trash2, Users, Target, CheckCircle, AlertCircle, Flame } from 'lucide-react';
+import { UserPlus, Edit, Trash2, Users, Target, CheckCircle, AlertCircle, Flame, History } from 'lucide-react';
+import { CustomerHistoryModal } from './CustomerHistoryModal';
 
 interface CustomerFormProps {
   show: boolean;
@@ -65,6 +66,8 @@ export function CustomersPage() {
   const [showForm, setShowForm] = useState(false);
   const [showOpportunityForm, setShowOpportunityForm] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyCustomer, setHistoryCustomer] = useState<any>(null);
   const [selectedCustomerForOpportunity, setSelectedCustomerForOpportunity] = useState<any>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
   // @ts-ignore - Map para almacenar la etapa de oportunidad por customer_id
@@ -247,6 +250,14 @@ export function CustomersPage() {
                         </td>
                         <td className="text-end pe-4">
                           <div className="d-flex gap-1 justify-content-end">
+                            <Button
+                              variant="outline-secondary"
+                              size="sm"
+                              onClick={() => { setHistoryCustomer(customer); setShowHistory(true); }}
+                              title="Ver historial del cliente"
+                            >
+                              <History size={16} />
+                            </Button>
                             <Button 
                               variant={hasOpportunity ? "outline-secondary" : "success"} 
                               size="sm" 
@@ -291,6 +302,7 @@ export function CustomersPage() {
       </Card>
 
       <CustomerForm show={showForm} onHide={() => setShowForm(false)} customer={selectedCustomer} onSuccess={handleSuccess} />
+      <CustomerHistoryModal show={showHistory} onHide={() => setShowHistory(false)} customer={historyCustomer} />
       <OpportunityForm 
         show={showOpportunityForm} 
         onHide={() => setShowOpportunityForm(false)} 

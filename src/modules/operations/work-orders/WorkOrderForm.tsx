@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Modal, Button, Form, Row, Col, Alert, Spinner, Table } from 'react-bootstrap';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { createWorkOrder, updateWorkOrder, getNextWorkOrderNumber, getTechnicians, type WorkOrderMaterial } from '@/services/api/work-orders';
 import { getCustomers } from '@/services/api/customers';
 import { Plus, Trash2 } from 'lucide-react';
+import { WorkOrderPhotos } from './WorkOrderPhotos';
 
 const schema = z.object({
   order_number: z.string().min(1, 'Número es requerido'),
@@ -51,7 +52,7 @@ export function WorkOrderForm({ show, onHide, order, onSuccess }: WorkOrderFormP
   const [technicians, setTechnicians] = useState<any[]>([]);
   const [materials, setMaterials] = useState<WorkOrderMaterial[]>([]);
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<FormData>({
+  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: order || { status: 'pending', priority: 'medium', materials_cost: 0, labor_cost: 0 }
   });
@@ -101,6 +102,10 @@ export function WorkOrderForm({ show, onHide, order, onSuccess }: WorkOrderFormP
   };
 
   const totalMaterials = materials.reduce((sum, m) => sum + (m.total || 0), 0);
+
+  const watchedMaterialsCost = Number(watch('materials_cost')) || 0;
+  const watchedLaborCost = Number(watch('labor_cost')) || 0;
+  const watchedStatus = watch('status');
 
   const onSubmit = async (data: FormData) => {
     if (materials.length > 0 && data.materials_cost === 0) {
@@ -262,15 +267,19 @@ export function WorkOrderForm({ show, onHide, order, onSuccess }: WorkOrderFormP
             </Table>
           )}
 
+          {order?.id && (
+            <WorkOrderPhotos key={order.id} workOrderId={order.id} isFinished={watchedStatus === 'completed'} />
+          )}
+
           <div className="mt-4 p-3 bg-light rounded">
             <Row>
               <Col md={6}></Col>
               <Col md={6}>
-                <div className="d-flex justify-content-between mb-2"><span>Materiales:</span><span>${(typeof materials_cost === 'number' ? materials_cost : 0).toLocaleString('es-CO')}</span></div>
-                <div className="d-flex justify-content-between mb-2"><span>Mano de Obra:</span><span>${(typeof labor_cost === 'number' ? labor_cost : 0).toLocaleString('es-CO')}</span></div>
+                <div className="d-flex justify-content-between mb-2"><span>Materiales:</span><span>${watchedMaterialsCost.toLocaleString('es-CO')}</span></div>
+                <div className="d-flex justify-content-between mb-2"><span>Mano de Obra:</span><span>${watchedLaborCost.toLocaleString('es-CO')}</span></div>
                 <div className="d-flex justify-content-between fw-bold fs-5 border-top pt-2">
                   <span>TOTAL ORDEN:</span>
-                  <span>${((typeof materials_cost === 'number' ? materials_cost : 0) + (typeof labor_cost === 'number' ? labor_cost : 0)).toLocaleString('es-CO')}</span>
+                  <span>${(watchedMaterialsCost + watchedLaborCost).toLocaleString('es-CO')}</span>
                 </div>
               </Col>
             </Row>
