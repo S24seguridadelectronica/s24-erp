@@ -169,7 +169,11 @@ export function PhotoGallery({ photos, label, size = 60, max = 3, icon: Icon, on
     } catch { window.alert('No fue posible cargar la imagen.'); }
   };
 
-  const removeAt = (index: number) => onChange(photos.filter((_, i) => i !== index));
+  const removeAt = (index: number) => {
+    if (window.confirm('¿Eliminar esta foto de la evidencia?')) {
+      onChange(photos.filter((_, i) => i !== index));
+    }
+  };
 
   return (
     <div className="mt-3 p-2 border rounded bg-white">

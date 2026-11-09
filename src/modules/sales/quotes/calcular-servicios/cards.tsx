@@ -99,7 +99,14 @@ export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices,
           <Files size={14} />
         </Button>
         <Button variant="outline-danger" size="sm"
-          onClick={e => { e.stopPropagation(); actions.removeCamera(dvrId, cam.id); }}>
+          onClick={e => {
+            e.stopPropagation();
+            const photos = cam.photos.length;
+            const extra = photos > 0 ? `\n\nTambién se perderán ${photos} foto(s) de esta cámara.` : '';
+            if (window.confirm(`¿Eliminar "${cam.label || 'Cámara'}"?${extra}\n\nEsta acción no se puede deshacer.`)) {
+              actions.removeCamera(dvrId, cam.id);
+            }
+          }}>
           <Trash2 size={14} />
         </Button>
       </Card.Header>
@@ -245,7 +252,14 @@ export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, a
             </Button>
           </InputGroup>
           {canRemove && (
-            <Button variant="outline-danger" size="sm" onClick={() => actions.removeDvr(dvr.id)}>
+            <Button variant="outline-danger" size="sm"
+              onClick={() => {
+                const cameras = dvr.cameras.length;
+                const extra = cameras > 0 ? ` con ${cameras} cámara(s) y sus fotos` : '';
+                if (window.confirm(`¿Eliminar el grabador "${dvr.label || deviceName}"${extra}?\n\nEsta acción no se puede deshacer.`)) {
+                  actions.removeDvr(dvr.id);
+                }
+              }}>
               <Trash2 size={14} className="me-1" /> Eliminar
             </Button>
           )}

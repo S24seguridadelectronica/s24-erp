@@ -74,7 +74,10 @@ export function SavedCalculationsModal({ show, onHide, items, onSaveCurrent, onL
                   <Button variant="outline-primary" size="sm" onClick={() => onLoad(item)} title="Cargar cálculo">
                     <Upload size={14} />
                   </Button>
-                  <Button variant="outline-danger" size="sm" onClick={() => onDelete(item.id)} title="Eliminar">
+                  <Button variant="outline-danger" size="sm" title="Eliminar"
+                    onClick={() => {
+                      if (window.confirm(`¿Eliminar "${item.name}" de los cálculos guardados?`)) onDelete(item.id);
+                    }}>
                     <Trash2 size={14} />
                   </Button>
                 </div>
