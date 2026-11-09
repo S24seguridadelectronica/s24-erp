@@ -169,8 +169,8 @@ export async function createQuote(quote: any, items: any[]) {
       quantity: item.quantity,
       unit_price: item.unit_price,
       discount: item.discount || 0,
-      tax_rate: item.tax_rate || 19,
-      total: (item.quantity * item.unit_price) * (1 - (item.discount || 0) / 100) * (1 + (item.tax_rate || 19) / 100),
+      tax_rate: item.tax_rate ?? 19,
+      total: (item.quantity * item.unit_price) * (1 - (item.discount || 0) / 100) * (1 + (item.tax_rate ?? 19) / 100),
       photo: item.photo || null,
       detail: item.detail || null
     }));
@@ -235,8 +235,8 @@ export async function updateQuote(id: number, quote: any) {
         quantity: item.quantity,
         unit_price: item.unit_price,
         discount: item.discount || 0,
-        tax_rate: item.tax_rate || 19,
-        total: (item.quantity * item.unit_price) * (1 - (item.discount || 0) / 100) * (1 + (item.tax_rate || 19) / 100),
+        tax_rate: item.tax_rate ?? 19,
+        total: (item.quantity * item.unit_price) * (1 - (item.discount || 0) / 100) * (1 + (item.tax_rate ?? 19) / 100),
         photo: item.photo || null,
         detail: item.detail || null
       }));

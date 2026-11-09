@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Badge, Button, Card, Col, Form, Modal, Row } from 'react-bootstrap';
 import {
-  Calculator, ClipboardList, Clock3, Copy, HardDrive, Info, MapPin, Package, PlusCircle, Settings,
+  Calculator, ClipboardList, Clock3, Copy, Eye, HardDrive, Info, MapPin, Package, PlusCircle, RotateCcw, Settings,
 } from 'lucide-react';
 import {
   AFFECTED_OPTIONS, CAUSE_SERVICES, DEFAULT_PRICES, DEVICE_OPTIONS, DEVICE_SERVICES, INITIAL_FORM, INTERNET_OPTIONS,
@@ -16,27 +16,38 @@ import {
   buildQuote, countCamerasWithWork, createCamera, createDvr, initItems, money, nonNegative, remapItems, sumSelected,
 } from './calc';
 import { loadRemotePriceData, readStoredPrices, saveRemotePriceData, writeStoredPrices, type StoredPriceData } from './priceStorage';
+import { clearDraft, readDraft, writeDraft } from './draft';
 import { ItemRows, NumField, Panel, PanelHeader, Row2, SelectField, Step } from './ui';
 import { DvrCard } from './cards';
 import type { Actions } from './cards';
 import { LineItemRow, PriceSettings, ServiceGrid } from './panel';
 import { MAX_PHOTOS_PER_QUOTE, serializePhotos } from '@/utils/quotePhotos';
+import { buildQuotePdf } from '@/services/api/quotePdf';
 
 /* =========================================================================
  * Componente principal
  * ========================================================================= */
 
 export function CalcularServicios({ show, onHide, onAddItems }: CalcularServiciosProps) {
-  const [selectedService, setSelectedService] = useState<ServiceKey>('maintenance');
+  /* Borrador previo (si la app se cerró a mitad del cálculo). */
+  const [initialDraft] = useState(() => readDraft());
+  const draftData = initialDraft?.data ? { ...INITIAL_FORM, ...initialDraft.data } : INITIAL_FORM;
+
+  const [selectedService, setSelectedService] = useState<ServiceKey>(initialDraft?.service ?? 'maintenance');
   const [showPrices, setShowPrices] = useState(false);
   const [priceData, setPriceData] = useState<StoredPriceData>(readStoredPrices);
-  const [system, setSystem] = useState<SystemType>('analog');
-  const [data, setData] = useState<ServiceForm>(INITIAL_FORM);
+  const [system, setSystem] = useState<SystemType>(initialDraft?.system ?? 'analog');
+  const [data, setData] = useState<ServiceForm>(draftData);
 
-  const [videoCause, setVideoCause] = useState<VideoCause>('unknown');
-  const [videoMaterials, setVideoMaterials] = useState<Items>(() => initItems(VIDEO_MATERIALS));
-  const [maintenanceMaterials, setMaintenanceMaterials] = useState<Items>(() => initItems(MAINTENANCE_MATERIALS));
-  const [dvrGroups, setDvrGroups] = useState<DvrGroup[]>(() => [createDvr('DVR / NVR 1', 'analog', false, 4)]);
+  const [videoCause, setVideoCause] = useState<VideoCause>(initialDraft?.videoCause ?? 'unknown');
+  const [videoMaterials, setVideoMaterials] = useState<Items>(() => initialDraft?.videoMaterials ?? initItems(VIDEO_MATERIALS));
+  const [maintenanceMaterials, setMaintenanceMaterials] = useState<Items>(() => initialDraft?.maintenanceMaterials ?? initItems(MAINTENANCE_MATERIALS));
+  const [dvrGroups, setDvrGroups] = useState<DvrGroup[]>(() => initialDraft?.dvrGroups ?? [createDvr('DVR / NVR 1', 'analog', false, 4)]);
+
+  /** Claves de material marcadas automáticamente por la causa de video. */
+  const autoVideoMaterials = useRef<string[]>([]);
+  /** Evita que el borrador se reescriba justo después de un "Nuevo cálculo". */
+  const skipDraftOnce = useRef(false);
 
   const prices = priceData.prices;
   const taxRate = priceData.taxRate;
@@ -56,6 +67,37 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
     });
     return () => { cancelled = true; };
   }, []);
+
+  /** Vuelve el cálculo a cero y descarta el borrador guardado. */
+  const resetCalculator = useCallback(() => {
+    skipDraftOnce.current = true;
+    clearDraft();
+    setSelectedService('maintenance');
+    setSystem('analog');
+    setData({ ...INITIAL_FORM });
+    setVideoCause('unknown');
+    setVideoMaterials(initItems(VIDEO_MATERIALS));
+    setMaintenanceMaterials(initItems(MAINTENANCE_MATERIALS));
+    setDvrGroups([createDvr('DVR / NVR 1', 'analog', false, 4)]);
+    autoVideoMaterials.current = [];
+  }, []);
+
+  /* Borrador: si la app se cierra a mitad del cálculo, se recupera al abrir. */
+  useEffect(() => {
+    if (!show) {
+      skipDraftOnce.current = false;
+      return;
+    }
+    if (skipDraftOnce.current) {
+      skipDraftOnce.current = false;
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      writeDraft({ service: selectedService, system, data, videoCause, videoMaterials, maintenanceMaterials, dvrGroups });
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [show, selectedService, system, data, videoCause, videoMaterials, maintenanceMaterials, dvrGroups]);
 
   const { deviceName } = SYSTEMS[system];
   const isMaintenance = selectedService === 'maintenance';
@@ -86,7 +128,7 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
   const updateTaxRate = useCallback((value: string) =>
     setPriceData(prev => {
       const raw = nonNegative(value);
-      return { ...prev, taxRate: raw > 0 ? Math.min(100, raw) : prev.taxRate };
+      return { ...prev, taxRate: Math.min(100, raw) };
     }), []);
 
   const resetPrices = useCallback(() =>
@@ -95,8 +137,13 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
   const patchMaterial = useCallback((key: string, p: Partial<MaterialState>) =>
     setMaintenanceMaterials(prev => ({ ...prev, [key]: { ...prev[key], ...p } })), []);
 
-  const patchVideoMaterial = useCallback((key: string, p: Partial<MaterialState>) =>
-    setVideoMaterials(prev => ({ ...prev, [key]: { ...prev[key], ...p } })), []);
+  const patchVideoMaterial = useCallback((key: string, p: Partial<MaterialState>) => {
+    /* Si el vendedor toca la selección a mano, deja de ser "sugerida" por la causa. */
+    if (p.selected !== undefined) {
+      autoVideoMaterials.current = autoVideoMaterials.current.filter(k => k !== key);
+    }
+    setVideoMaterials(prev => ({ ...prev, [key]: { ...prev[key], ...p } }));
+  }, []);
 
   const handleSystemChange = useCallback((type: SystemType) => {
     setSystem(type);
@@ -114,9 +161,18 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
   const handleVideoCauseChange = useCallback((cause: VideoCause) => {
     setVideoCause(cause);
     const suggested = VIDEO_CAUSES.find(c => c.value === cause)?.suggested ?? [];
+    const previousAuto = autoVideoMaterials.current;
+
+    /* Marca lo sugerido sin borrar lo que el vendedor eligió a mano; solo
+     * desmarca lo que había sugerido la causa anterior. */
     setVideoMaterials(prev => Object.fromEntries(
-      Object.entries(prev).map(([key, m]) => [key, { ...m, selected: suggested.includes(key) }]),
+      Object.entries(prev).map(([key, material]) => {
+        if (suggested.includes(key)) return [key, { ...material, selected: true }];
+        if (previousAuto.includes(key)) return [key, { ...material, selected: false }];
+        return [key, material];
+      }),
     ));
+    autoVideoMaterials.current = [...suggested];
   }, []);
 
   const onVideoCauseChange = useCallback(
@@ -178,11 +234,6 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
 
   /* ---- salida ---- */
   const handleAddToQuote = useCallback(() => {
-    if (isMaintenance && camerasWithWork === 0) {
-      window.alert('No hay cámaras con servicios marcados. Marca al menos una tarea en una cámara.');
-      return;
-    }
-
     if (!result.lines.some(line => line.amount > 0)) {
       window.alert('No hay conceptos calculados para agregar a la cotización.');
       return;
@@ -198,15 +249,13 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
       if (!continuar) return;
     }
 
-    const factor = 1 - discountPct / 100;
-
     const items: QuoteItem[] = result.lines
       .map(line => ({
         item_type: line.itemType,
         description: `${line.description}${line.detail ? ` — ${line.detail}` : ''}${otherNote ? ` | Solicitud: ${otherNote}` : ''}`,
         quantity: 1,
-        unit_price: Math.round(line.amount * factor),
-        discount: 0,
+        unit_price: Math.round(line.amount),
+        discount: discountPct,
         tax_rate: taxRate,
         photo: serializePhotos(line.photos),
         detail: line.meta ?? null,
@@ -215,8 +264,9 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
 
     if (!items.length) return;
     onAddItems(items);
+    resetCalculator();
     onHide();
-  }, [result.lines, otherNote, onAddItems, onHide, isMaintenance, camerasWithWork, discountPct, taxRate]);
+  }, [result.lines, otherNote, onAddItems, onHide, discountPct, taxRate, resetCalculator]);
 
   const copyQuote = useCallback(async () => {
     const text = [
@@ -243,15 +293,55 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
     }
   }, [selectedService, result, otherNote, estimatedTax, estimatedTotal, discountPct, discountedSubtotal, taxRate]);
 
+  /* Vista previa del PDF sin tener que guardar la cotización. */
+  const previewPdf = useCallback(() => {
+    const previewQuote = {
+      quote_number: 'PREVIA',
+      created_at: new Date().toISOString(),
+      status: 'draft',
+      customers: { full_name: 'Cliente (vista previa)' },
+      items: result.lines.map(line => ({
+        item_type: line.itemType,
+        description: `${line.description}${line.detail ? ` — ${line.detail}` : ''}`,
+        quantity: 1,
+        unit_price: Math.round(line.amount),
+        discount: discountPct,
+        tax_rate: taxRate,
+        photo: serializePhotos(line.photos),
+      })),
+      subtotal: result.subtotal,
+      discount_amount: result.subtotal - discountedSubtotal,
+      tax_amount: estimatedTax,
+      total: estimatedTotal,
+    };
+
+    try {
+      const { doc, filename } = buildQuotePdf(previewQuote);
+      const url = doc.output('bloburl') as unknown as string;
+      const win = window.open(url, '_blank');
+      if (!win) doc.save(filename);
+    } catch {
+      window.alert('No fue posible generar la vista previa del PDF.');
+    }
+  }, [result, discountPct, taxRate, discountedSubtotal, estimatedTax, estimatedTotal]);
+
+  const handleReset = useCallback(() => {
+    if (window.confirm('¿Empezar un cálculo nuevo? Se descarta el actual.')) resetCalculator();
+  }, [resetCalculator]);
+
   return (
     <Modal show={show} onHide={onHide} size="xl" centered scrollable dialogClassName="s24-service-calculator-modal">
       <Modal.Header closeButton className="border-bottom-0 pb-2">
-        <div className="d-flex align-items-center gap-3">
+        <div className="d-flex align-items-center gap-3 w-100">
           <div className="rounded-3 bg-primary bg-opacity-10 text-primary p-2"><Calculator size={24} /></div>
           <div>
             <Modal.Title className="fw-bold">Calculadora de servicios CCTV</Modal.Title>
             <div className="small text-muted">S24 Seguridad Electrónica · Cotización preliminar</div>
           </div>
+          <Button variant="link" size="sm" className="ms-auto me-4 text-decoration-none text-nowrap"
+            onClick={handleReset} title="Empezar un cálculo nuevo">
+            <RotateCcw size={14} className="me-1" /> Nuevo cálculo
+          </Button>
         </div>
       </Modal.Header>
 
@@ -325,7 +415,7 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
                         <strong>Tope de mano de obra por cámara:</strong> {money(laborCap)}
                         <br />
                         <span className="text-muted">
-                          Ajustado automáticamente para {camerasWithWork} cámara(s) con servicios ({laborTier.note}).
+                          Ajustado automáticamente según {camerasWithWork} cámara(s) con mano de obra ({laborTier.note}).
                           El cambio de cableado se cobra aparte y no consume este tope.
                         </span>
                       </Alert>
@@ -344,7 +434,7 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
                           title="Materiales adicionales"
                           hint="Repuestos o consumibles (fuentes, baluns, cable, cámaras, etc.). No incluyen mano de obra."
                         />
-                        <ItemRows defs={MAINTENANCE_MATERIALS} state={maintenanceMaterials} patch={patchMaterial} labelWidth={260} />
+                        <ItemRows defs={MAINTENANCE_MATERIALS} state={maintenanceMaterials} patch={patchMaterial} />
                       </Panel>
                     </Col>
                   )}
@@ -368,7 +458,7 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
                               hint="Marque los que se requieran y ajuste cantidad y precio."
                               badge={<Badge bg="info" text="dark">{money(videoMaterialsTotal)}</Badge>}
                             />
-                            <ItemRows defs={VIDEO_MATERIALS} state={videoMaterials} patch={patchVideoMaterial} labelWidth={200} priceWidth={170} />
+                            <ItemRows defs={VIDEO_MATERIALS} state={videoMaterials} patch={patchVideoMaterial} priceWidth={170} />
                           </Panel>
                         </Col>
                       )}
@@ -476,6 +566,9 @@ export function CalcularServicios({ show, onHide, onAddItems }: CalcularServicio
                 <div className="mt-auto pt-3">
                   <Button variant="primary" className="w-100 py-2 fw-semibold" onClick={handleAddToQuote}>
                     <PlusCircle size={17} className="me-2" />Agregar conceptos a cotización
+                  </Button>
+                  <Button variant="outline-primary" className="w-100 mt-2" onClick={previewPdf}>
+                    <Eye size={16} className="me-2" />Vista previa del PDF
                   </Button>
                   <Button variant="outline-secondary" className="w-100 mt-2" onClick={copyQuote}>
                     <Copy size={16} className="me-2" />Copiar resumen

@@ -191,7 +191,9 @@ export function QuoteForm({ show, onHide, quote, preselectedOpportunity, onSucce
     const subtotal = items.reduce((sum, item) => sum + ((Number(item.quantity) || 0) * (Number(item.unit_price) || 0)), 0);
     const discountAmount = items.reduce((sum, item) => sum + ((Number(item.quantity) || 0) * (Number(item.unit_price) || 0) * (Number(item.discount) || 0) / 100), 0);
     const taxAmount = items.reduce((sum, item) => {
-      const qty = Number(item.quantity) || 0, price = Number(item.unit_price) || 0, disc = Number(item.discount) || 0, tax = Number(item.tax_rate) || 19;
+      const qty = Number(item.quantity) || 0, price = Number(item.unit_price) || 0, disc = Number(item.discount) || 0;
+      const rawTax = Number(item.tax_rate);
+      const tax = Number.isFinite(rawTax) && item.tax_rate != null ? rawTax : 19;
       return sum + ((qty * price * (1 - disc / 100)) * tax / 100);
     }, 0);
     return { subtotal, discountAmount, taxAmount, total: (subtotal - discountAmount) + taxAmount };
@@ -346,7 +348,7 @@ export function QuoteForm({ show, onHide, quote, preselectedOpportunity, onSucce
                   <td><Form.Control type="number" min="1" value={item.quantity} onChange={(e) => updateItem(index, 'quantity', parseFloat(e.target.value) || 0)} /></td>
                   <td><Form.Control type="number" min="0" value={item.unit_price} onChange={(e) => updateItem(index, 'unit_price', parseFloat(e.target.value) || 0)} /></td>
                   <td><Form.Control type="number" min="0" max="100" value={item.discount || 0} onChange={(e) => updateItem(index, 'discount', parseFloat(e.target.value) || 0)} /></td>
-                  <td><Form.Control type="number" min="0" max="100" value={item.tax_rate || 19} onChange={(e) => updateItem(index, 'tax_rate', parseFloat(e.target.value) || 0)} /></td>
+                  <td><Form.Control type="number" min="0" max="100" value={item.tax_rate ?? 19} onChange={(e) => updateItem(index, 'tax_rate', parseFloat(e.target.value) || 0)} /></td>
                   <td className="fw-bold">${((Number(item.quantity) * Number(item.unit_price)) * (1 - (Number(item.discount) || 0) / 100) * (1 + (Number(item.tax_rate) || 19) / 100)).toLocaleString('es-CO')}</td>
                   <td><Button variant="outline-danger" size="sm" onClick={() => removeItem(index)}><Trash2 size={14} /></Button></td>
                 </tr>
@@ -365,7 +367,7 @@ export function QuoteForm({ show, onHide, quote, preselectedOpportunity, onSucce
               <Col md={6}>
                 <div className="d-flex justify-content-between mb-2"><span>Subtotal:</span><span>${totals.subtotal.toLocaleString('es-CO')}</span></div>
                 <div className="d-flex justify-content-between mb-2"><span>Descuento:</span><span>-${totals.discountAmount.toLocaleString('es-CO')}</span></div>
-                <div className="d-flex justify-content-between mb-2"><span>IVA (19%):</span><span>${totals.taxAmount.toLocaleString('es-CO')}</span></div>
+                <div className="d-flex justify-content-between mb-2"><span>IVA:</span><span>${totals.taxAmount.toLocaleString('es-CO')}</span></div>
                 <div className="d-flex justify-content-between fw-bold fs-5 border-top pt-2"><span>TOTAL:</span><span>${totals.total.toLocaleString('es-CO')}</span></div>
               </Col>
             </Row>

@@ -114,11 +114,16 @@ export function calcularMontoCableado(task: MaterialState | undefined, distance:
   return { total: baseAmount + distanceExcess + heightExcess, baseAmount, distanceExcess, heightExcess, extraDistance, extraHeight };
 }
 
-export const cameraHasWork = (cam: CameraGroup, system: SystemType) =>
-  SYSTEMS[system].cameraTasks.some(def => cam.tasks[def.key]?.selected);
+/**
+ * Cámara con mano de obra facturable. El cambio de cableado no cuenta porque
+ * se cobra fuera del tope: si contara, bajaría el tope de las demás cámaras sin
+ * aportar mano de obra a la suma.
+ */
+export const cameraHasLabor = (cam: CameraGroup, system: SystemType) =>
+  SYSTEMS[system].cameraTasks.some(def => def.key !== 'cableChange' && cam.tasks[def.key]?.selected);
 
 export const countCamerasWithWork = (dvrGroups: DvrGroup[], system: SystemType) =>
-  dvrGroups.reduce((n, dvr) => dvr.active ? n + dvr.cameras.filter(c => c.active && cameraHasWork(c, system)).length : n, 0);
+  dvrGroups.reduce((n, dvr) => dvr.active ? n + dvr.cameras.filter(c => c.active && cameraHasLabor(c, system)).length : n, 0);
 /* =========================================================================
  * Motor de cotización
  * ========================================================================= */

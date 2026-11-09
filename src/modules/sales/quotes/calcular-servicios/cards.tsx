@@ -93,7 +93,7 @@ export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices,
       {cam.expanded && (
         <Card.Body className="bg-light" style={{ pointerEvents: cam.active ? 'auto' : 'none' }}>
           <ItemRows
-            defs={tasks} state={cam.tasks} labelWidth={350} disabled={!cam.active}
+            defs={tasks} state={cam.tasks} disabled={!cam.active}
             patch={patchTask}
             totalOf={totalOf}
           />
@@ -102,15 +102,16 @@ export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices,
             <div className="mt-2 ms-4 p-2 bg-white rounded border">
               <div className="small text-muted mb-2">
                 Cableado — base incluida: 0–10 m de distancia y 0–3 m de altura <strong>por punto</strong>.
+                Los metros extra se cobran por cada punto.
               </div>
               <Row className="g-2 mb-2">
                 <Col sm={6}>
                   <NumField id={`cam-cable-dist-${cam.id}`} size="sm" compact icon={MapPin} unit="m"
-                    label="Distancia del cableado" value={cam.cableDistance} onChange={setCableDistance} />
+                    label="Distancia del cableado (m por punto)" value={cam.cableDistance} onChange={setCableDistance} />
                 </Col>
                 <Col sm={6}>
                   <NumField id={`cam-cable-height-${cam.id}`} size="sm" compact icon={ArrowUp} unit="m"
-                    label="Altura del cableado" value={cam.cableHeight} onChange={setCableHeight} />
+                    label="Altura del cableado (m por punto)" value={cam.cableHeight} onChange={setCableHeight} />
                 </Col>
               </Row>
               <div className="small text-muted" style={{ lineHeight: 1.4 }}>
@@ -264,7 +265,7 @@ export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, a
             <h6 className="fw-bold mb-0 text-secondary"><Wrench size={16} className="me-1" /> Mantenimiento al {deviceName}</h6>
             <Badge bg="success" text="dark">{money(maintenanceTotal)}</Badge>
           </div>
-          <ItemRows defs={dvrTasks} state={dvr.maintenance} labelWidth={240} disabled={!dvr.active}
+          <ItemRows defs={dvrTasks} state={dvr.maintenance} disabled={!dvr.active}
             patch={patchMaintenance} />
         </div>
 

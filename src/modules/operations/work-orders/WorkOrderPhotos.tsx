@@ -153,7 +153,7 @@ export function WorkOrderPhotos({ workOrderId, isFinished = false }: WorkOrderPh
                     <span className="small">Añadir foto</span>
                   </>
                 )}
-                <input type="file" accept="image/*" capture="environment" className="d-none"
+                <input type="file" accept="image/*" className="d-none"
                   onChange={handleFile} disabled={saving} />
               </label>
             )}

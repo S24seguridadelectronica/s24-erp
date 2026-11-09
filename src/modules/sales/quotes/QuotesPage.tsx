@@ -86,7 +86,7 @@ export function QuotesPage() {
         quantity: item.quantity,
         unit_price: item.unit_price,
         discount: item.discount || 0,
-        tax_rate: item.tax_rate || 19
+        tax_rate: item.tax_rate ?? 19
       }));
       await createQuote(newQuoteData, items);
       alert('✅ Cotización duplicada exitosamente');

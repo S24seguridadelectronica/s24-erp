@@ -137,7 +137,7 @@ export function buildQuotePdf(quote: any): { doc: any; filename: string } {
     String(item.quantity || 0),
     '$' + Math.round(item.unit_price || 0).toLocaleString('es-CO'),
     (item.discount || 0) + '%',
-    '$' + Math.round((item.quantity * item.unit_price) * (1 - (item.discount || 0) / 100) * (1 + (item.tax_rate || 19) / 100)).toLocaleString('es-CO')
+    '$' + Math.round((item.quantity * item.unit_price) * (1 - (item.discount || 0) / 100) * (1 + (item.tax_rate ?? 19) / 100)).toLocaleString('es-CO')
   ]);
 
   autoTable(doc, {
@@ -169,7 +169,7 @@ export function buildQuotePdf(quote: any): { doc: any; filename: string } {
   doc.text('$' + Math.round(quote.subtotal || 0).toLocaleString('es-CO'), rightMargin, finalY, { align: 'right' });
   doc.text('Descuento:', rightMargin - 40, finalY + 6, { align: 'right' });
   doc.text('-$' + Math.round(quote.discount_amount || 0).toLocaleString('es-CO'), rightMargin, finalY + 6, { align: 'right' });
-  doc.text('IVA (19%):', rightMargin - 40, finalY + 12, { align: 'right' });
+  doc.text('IVA:', rightMargin - 40, finalY + 12, { align: 'right' });
   doc.text('$' + Math.round(quote.tax_amount || 0).toLocaleString('es-CO'), rightMargin, finalY + 12, { align: 'right' });
 
   doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);

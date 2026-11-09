@@ -90,26 +90,32 @@ export interface ItemRowProps {
   def: CatalogItem;
   state: MaterialState;
   patch: (key: string, p: Partial<MaterialState>) => void;
-  labelWidth: number;
   priceWidth: number;
   totalOf?: (key: string) => number;
   disabled?: boolean;
 }
 
-export const ItemRow = memo(function ItemRow({ def, state, patch, labelWidth, priceWidth, totalOf, disabled }: ItemRowProps) {
+/**
+ * Fila de tarea. El nombre ocupa su propia línea para que en el celular la
+ * cantidad y el precio no queden fuera de pantalla.
+ */
+export const ItemRow = memo(function ItemRow({ def, state, patch, priceWidth, totalOf, disabled }: ItemRowProps) {
   return (
     <div className={`border-top py-2 ${disabled ? 'opacity-50' : ''}`}>
+      <Form.Check
+        type="checkbox"
+        className="mb-2"
+        checked={state.selected}
+        disabled={disabled}
+        onChange={e => patch(def.key, { selected: e.target.checked })}
+        label={<span className="small fw-semibold">{def.label}</span>}
+      />
       <div className="d-flex flex-wrap align-items-center gap-2">
-        <Form.Check
-          type="checkbox" className="me-2" checked={state.selected} disabled={disabled}
-          onChange={e => patch(def.key, { selected: e.target.checked })}
-          label={<span className="small fw-semibold">{def.label}</span>}
-          style={{ minWidth: labelWidth }}
-        />
         <Form.Control
           type="number" min={1} size="sm" value={state.quantity} disabled={!state.selected || disabled}
           onChange={e => patch(def.key, { quantity: Math.max(1, nonNegative(e.target.value)) })}
           style={{ maxWidth: 80 }}
+          aria-label={`Cantidad de ${def.label}`}
         />
         <span className="small text-muted">{def.unit}</span>
         <PriceInput
@@ -127,11 +133,11 @@ export const ItemRow = memo(function ItemRow({ def, state, patch, labelWidth, pr
 export interface ItemRowsProps {
   defs: CatalogItem[]; state: Items;
   patch: (key: string, p: Partial<MaterialState>) => void;
-  labelWidth: number; priceWidth?: number;
+  priceWidth?: number;
   totalOf?: (key: string) => number; disabled?: boolean;
 }
 
-export function ItemRows({ defs, state, patch, labelWidth, priceWidth = 160, totalOf, disabled }: ItemRowsProps) {
+export function ItemRows({ defs, state, patch, priceWidth = 160, totalOf, disabled }: ItemRowsProps) {
   return (
     <>
       {defs.map(def => (
@@ -140,7 +146,6 @@ export function ItemRows({ defs, state, patch, labelWidth, priceWidth = 160, tot
           def={def}
           state={state[def.key]}
           patch={patch}
-          labelWidth={labelWidth}
           priceWidth={priceWidth}
           totalOf={totalOf}
           disabled={disabled}
@@ -188,9 +193,10 @@ export function PhotoGallery({ photos, label, size = 60, max = 3, icon: Icon, on
 
         {photos.length < max && (
           <label className="btn btn-outline-primary btn-sm mb-0 d-flex align-items-center justify-content-center"
-            style={{ width: size, height: size }} title="Tomar o elegir foto">
+            style={{ width: size, height: size }} title="Tomar foto o elegir de la galería">
             <Icon size={size / 3} />
-            <input type="file" accept="image/*" capture="environment" className="d-none" onChange={handleFile} />
+            {/* Sin `capture`: el sistema ofrece cámara o galería según el equipo. */}
+            <input type="file" accept="image/*" className="d-none" onChange={handleFile} />
           </label>
         )}
       </div>
