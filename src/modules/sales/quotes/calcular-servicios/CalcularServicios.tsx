@@ -62,7 +62,9 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
   const skipDraftOnce = useRef(false);
 
   const prices = priceData.prices;
-  const taxRate = priceData.taxRate;
+  /** Si el IVA está apagado, todo sale con 0% (la tasa configurada no se toca). */
+  const applyTax = priceData.applyTax;
+  const taxRate = applyTax ? priceData.taxRate : 0;
 
   /* Persiste en el dispositivo al instante y sincroniza con la empresa (debounce). */
   useEffect(() => {
@@ -169,6 +171,11 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
   const updateMaxDiscount = useCallback((value: string) => {
     setSyncStatus('saving');
     setPriceData(prev => ({ ...prev, maxDiscount: Math.min(100, nonNegative(value)) }));
+  }, []);
+
+  const updateApplyTax = useCallback((value: boolean) => {
+    setSyncStatus('saving');
+    setPriceData(prev => ({ ...prev, applyTax: value }));
   }, []);
 
   const resetPrices = useCallback(() => {
@@ -412,12 +419,12 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
     '',
     `Subtotal: ${money(result.subtotal)}`,
     ...(discountPct > 0 ? [`Descuento (${discountPct}%): -${money(result.subtotal - discountedSubtotal)}`] : []),
-    `IVA estimado (${taxRate}%): ${money(estimatedTax)}`,
-    `TOTAL ESTIMADO CON IVA: ${money(estimatedTotal)}`,
+    applyTax ? `IVA estimado (${taxRate}%): ${money(estimatedTax)}` : 'IVA: no aplica',
+    `TOTAL ESTIMADO ${applyTax ? 'CON IVA' : '(SIN IVA)'}: ${money(estimatedTotal)}`,
     '',
     `Observación: ${result.message}`,
   ].join('\n'), [
-    selectedService, result, otherNote, estimatedTax, estimatedTotal, discountPct, discountedSubtotal, taxRate, customerName,
+    selectedService, result, otherNote, estimatedTax, estimatedTotal, discountPct, discountedSubtotal, taxRate, customerName, applyTax,
   ]);
 
   const copyQuote = useCallback(async () => {
@@ -712,15 +719,26 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
                   <Settings size={17} className="text-secondary" />
                   <strong className="small">Configuración de precios</strong>
                 </div>
-                <Button variant="link" size="sm" className="text-decoration-none" onClick={() => setShowPrices(v => !v)}>
-                  {showPrices ? 'Ocultar precios' : 'Editar precios'}
-                </Button>
+                <div className="d-flex align-items-center gap-3">
+                  <Form.Check
+                    type="switch"
+                    id="quick-apply-tax"
+                    className="small mb-0"
+                    checked={applyTax}
+                    onChange={e => updateApplyTax(e.target.checked)}
+                    title="Encender o apagar el IVA en la cotización"
+                    label={<span className="small fw-semibold">IVA</span>}
+                  />
+                  <Button variant="link" size="sm" className="text-decoration-none" onClick={() => setShowPrices(v => !v)}>
+                    {showPrices ? 'Ocultar precios' : 'Editar precios'}
+                  </Button>
+                </div>
               </Card.Header>
               {showPrices && (
-                <PriceSettings prices={prices} taxRate={taxRate} maxDiscount={priceData.maxDiscount}
-                  syncStatus={syncStatus}
+                <PriceSettings prices={prices} taxRate={priceData.taxRate} maxDiscount={priceData.maxDiscount}
+                  applyTax={applyTax} syncStatus={syncStatus}
                   onChange={updatePrice} onTaxRateChange={updateTaxRate}
-                  onMaxDiscountChange={updateMaxDiscount} onReset={resetPrices} />
+                  onMaxDiscountChange={updateMaxDiscount} onApplyTaxChange={updateApplyTax} onReset={resetPrices} />
               )}
             </Card>
           </Col>
@@ -770,10 +788,12 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
                   {discountPct > 0 && (
                     <Row2 className="small mb-2" l={<span className="text-muted">Descuento ({discountPct}%)</span>} r={`-${money(result.subtotal - discountedSubtotal)}`} />
                   )}
-                  <Row2 className="small mb-2" l={<span className="text-muted">IVA estimado ({taxRate}%)</span>} r={money(estimatedTax)} />
+                  <Row2 className="small mb-2"
+                    l={<span className="text-muted">{applyTax ? `IVA estimado (${taxRate}%)` : 'IVA: no aplica'}</span>}
+                    r={money(estimatedTax)} />
                   <div className="d-flex justify-content-between align-items-end border-top pt-3 mt-2">
                     <div>
-                      <div className="small text-uppercase text-muted fw-bold">Total estimado con IVA</div>
+                      <div className="small text-uppercase text-muted fw-bold">{applyTax ? 'Total estimado con IVA' : 'Total estimado (sin IVA)'}</div>
                       <div className="small text-muted">COP · sujeto a validación</div>
                     </div>
                     <div className="fs-3 fw-bold text-primary text-end">{money(estimatedTotal)}</div>
@@ -801,7 +821,9 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
                     <Copy size={16} className="me-2" />Copiar resumen
                   </Button>
                   <div className="small text-muted mt-3">
-                    El IVA mostrado es una estimación. Confirme la configuración tributaria de cada concepto en el ERP antes de emitir la cotización definitiva.
+                    {applyTax
+                      ? 'El IVA mostrado es una estimación. Confirme la configuración tributaria de cada concepto en el ERP antes de emitir la cotización definitiva.'
+                      : 'El IVA está apagado: los conceptos se agregarán con 0% de IVA.'}
                   </div>
                 </div>
               </Card.Body>

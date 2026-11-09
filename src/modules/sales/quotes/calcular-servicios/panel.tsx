@@ -39,12 +39,13 @@ export const ServiceGrid = memo(function ServiceGrid({ selected, onSelect }: {
   );
 });
 
-export const PriceSettings = memo(function PriceSettings({ prices, taxRate, maxDiscount, syncStatus, onChange, onTaxRateChange, onMaxDiscountChange, onReset }: {
-  prices: Prices; taxRate: number; maxDiscount: number;
+export const PriceSettings = memo(function PriceSettings({ prices, taxRate, maxDiscount, applyTax, syncStatus, onChange, onTaxRateChange, onMaxDiscountChange, onApplyTaxChange, onReset }: {
+  prices: Prices; taxRate: number; maxDiscount: number; applyTax: boolean;
   syncStatus: 'idle' | 'saving' | 'synced' | 'local';
   onChange: (key: PriceKey, value: string) => void;
   onTaxRateChange: (value: string) => void;
   onMaxDiscountChange: (value: string) => void;
+  onApplyTaxChange: (value: boolean) => void;
   onReset: () => void;
 }) {
   const syncLabel: Record<typeof syncStatus, string> = {
@@ -67,11 +68,23 @@ export const PriceSettings = memo(function PriceSettings({ prices, taxRate, maxD
       <Row className="g-3">
         <Col md={6}>
           <Form.Group controlId="price-tax-rate">
-            <Form.Label className="small text-muted">IVA (%) aplicado a la cotización</Form.Label>
+            <div className="d-flex justify-content-between align-items-center">
+              <Form.Label className="small text-muted mb-1">IVA (%) aplicado a la cotización</Form.Label>
+              <Form.Check
+                type="switch"
+                id="price-apply-tax"
+                className="small"
+                checked={applyTax}
+                onChange={e => onApplyTaxChange(e.target.checked)}
+                label={<span className="small">Aplicar IVA</span>}
+              />
+            </div>
             <InputGroup>
-              <Form.Control type="number" min={0} max={100} value={taxRate} onChange={e => onTaxRateChange(e.target.value)} />
+              <Form.Control type="number" min={0} max={100} value={taxRate} disabled={!applyTax}
+                onChange={e => onTaxRateChange(e.target.value)} />
               <InputGroup.Text>%</InputGroup.Text>
             </InputGroup>
+            {!applyTax && <Form.Text muted>IVA apagado: la cotización sale sin IVA.</Form.Text>}
           </Form.Group>
         </Col>
         <Col md={6}>

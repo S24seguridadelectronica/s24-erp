@@ -16,6 +16,8 @@ export interface StoredPriceData {
   taxRate: number;
   /** Descuento máximo autorizado sin aprobación (%). */
   maxDiscount: number;
+  /** Si está apagado, la cotización sale sin IVA. */
+  applyTax: boolean;
 }
 
 const STORAGE_KEY = 's24.quoteCalculator.prices.v2';
@@ -27,6 +29,7 @@ const DEFAULT_DATA: StoredPriceData = {
   prices: { ...DEFAULT_PRICES },
   taxRate: DEFAULT_TAX_RATE,
   maxDiscount: DEFAULT_MAX_DISCOUNT,
+  applyTax: true,
 };
 
 const normalizePrices = (raw: unknown): Prices =>
@@ -42,6 +45,8 @@ const normalizeTaxRate = (raw: unknown): number => {
 const normalizeMaxDiscount = (raw: unknown): number =>
   raw == null ? DEFAULT_MAX_DISCOUNT : Math.min(100, nonNegative(raw));
 
+const normalizeApplyTax = (raw: unknown): boolean => raw !== false;
+
 export const readStoredPrices = (): StoredPriceData => {
   try {
     if (typeof localStorage === 'undefined') return { ...DEFAULT_DATA, prices: { ...DEFAULT_PRICES } };
@@ -50,16 +55,22 @@ export const readStoredPrices = (): StoredPriceData => {
 
     const parsed: unknown = JSON.parse(raw);
     if (parsed && typeof parsed === 'object' && 'prices' in (parsed as Record<string, unknown>)) {
-      const obj = parsed as { prices?: unknown; taxRate?: unknown; maxDiscount?: unknown };
+      const obj = parsed as { prices?: unknown; taxRate?: unknown; maxDiscount?: unknown; applyTax?: unknown };
       return {
         prices: normalizePrices(obj.prices),
         taxRate: normalizeTaxRate(obj.taxRate),
         maxDiscount: normalizeMaxDiscount(obj.maxDiscount),
+        applyTax: normalizeApplyTax(obj.applyTax),
       };
     }
 
     // Formato v1: solo el objeto de precios.
-    return { prices: normalizePrices(parsed), taxRate: DEFAULT_TAX_RATE, maxDiscount: DEFAULT_MAX_DISCOUNT };
+    return {
+      prices: normalizePrices(parsed),
+      taxRate: DEFAULT_TAX_RATE,
+      maxDiscount: DEFAULT_MAX_DISCOUNT,
+      applyTax: true,
+    };
   } catch {
     return { ...DEFAULT_DATA, prices: { ...DEFAULT_PRICES } };
   }
@@ -99,11 +110,12 @@ export async function loadRemotePriceData(): Promise<StoredPriceData | null> {
 
     if (error || !data?.setting_value) return null;
 
-    const value = data.setting_value as { prices?: unknown; taxRate?: unknown; maxDiscount?: unknown };
+    const value = data.setting_value as { prices?: unknown; taxRate?: unknown; maxDiscount?: unknown; applyTax?: unknown };
     return {
       prices: normalizePrices(value?.prices),
       taxRate: normalizeTaxRate(value?.taxRate),
       maxDiscount: normalizeMaxDiscount(value?.maxDiscount),
+      applyTax: normalizeApplyTax(value?.applyTax),
     };
   } catch {
     return null;
