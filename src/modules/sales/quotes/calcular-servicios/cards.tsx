@@ -32,11 +32,9 @@ export interface Actions {
 
 export interface CameraCardProps {
   dvrId: string; cam: CameraGroup; system: SystemType; prices: Prices; actions: Actions;
-  /** Hay más cámaras en el grabador a las que se puede copiar la configuración. */
-  canCopy?: boolean;
 }
 
-export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices, actions, canCopy = false }: CameraCardProps) {
+export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices, actions }: CameraCardProps) {
   const tasks = SYSTEMS[system].cameraTasks;
   const acc = useMemo(() => cameraAccess(cam, prices), [cam, prices]);
   const cable = useMemo(
@@ -90,13 +88,11 @@ export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices,
             <span className="small text-muted ms-2 text-truncate" style={{ maxWidth: 250 }}>{summary}</span>
           )}
         </div>
-        {canCopy && (
-          <Button variant="outline-secondary" size="sm" className="me-1"
-            title="Copiar configuración a otras cámaras"
-            onClick={e => { e.stopPropagation(); actions.openCopyCamera(dvrId, cam.id); }}>
-            <Copy size={14} />
-          </Button>
-        )}
+        <Button variant="outline-secondary" size="sm" className="me-1"
+          title="Copiar configuración a otras cámaras"
+          onClick={e => { e.stopPropagation(); actions.openCopyCamera(dvrId, cam.id); }}>
+          <Copy size={14} />
+        </Button>
         <Button variant="outline-secondary" size="sm" className="me-1"
           title="Duplicar esta cámara"
           onClick={e => { e.stopPropagation(); actions.duplicateCamera(dvrId, cam.id); }}>
@@ -340,8 +336,7 @@ export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, a
             No hay cámaras agregadas a este grabador.
           </div>
         ) : dvr.cameras.map(cam => (
-          <CameraCard key={cam.id} dvrId={dvr.id} cam={cam} system={system} prices={prices} actions={actions}
-            canCopy={dvr.cameras.length > 1} />
+          <CameraCard key={cam.id} dvrId={dvr.id} cam={cam} system={system} prices={prices} actions={actions} />
         ))}
       </Card.Body>
     </Card>

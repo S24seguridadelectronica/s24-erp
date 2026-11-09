@@ -58,7 +58,9 @@ export function CopyCameraModal({ show, onHide, source, cameras, onConfirm }: Co
 
         <div className="d-flex flex-column gap-2">
           {targets.length === 0 && (
-            <div className="small text-muted">Este grabador no tiene otras cámaras.</div>
+            <div className="small text-muted">
+              Este grabador no tiene otras cámaras todavía. Agrega cámaras al grabador o usa el botón duplicar.
+            </div>
           )}
 
           {targets.map(camera => (
