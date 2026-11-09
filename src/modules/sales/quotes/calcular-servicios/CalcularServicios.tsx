@@ -14,12 +14,13 @@ import type {
   CalcularServiciosProps, CameraGroup, DvrGroup, Items, MaterialState, QuoteItem, VideoCause,
 } from './types';
 import {
-  buildQuote, countCamerasWithWork, createCamera, createDvr, initItems, money, nonNegative, remapItems, sumSelected,
+  buildQuote, countCamerasWithWork, createCamera, createDvr, initItems, money, nonNegative, remapItems, sumSelected, uid,
 } from './calc';
 import { loadRemotePriceData, readStoredPrices, saveRemotePriceData, writeStoredPrices, type StoredPriceData } from './priceStorage';
 import { clearDraft, readDraft, writeDraft, type DraftInput } from './draft';
 import { addSaved, readSaved, removeSaved, type SavedCalculation } from './savedStore';
 import { SavedCalculationsModal } from './saved';
+import { CopyCameraModal } from './copyCamera';
 import { ItemRows, NumField, Panel, PanelHeader, Row2, SelectField, Step } from './ui';
 import { DvrCard } from './cards';
 import type { Actions } from './cards';
@@ -52,6 +53,8 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
   const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'synced' | 'local'>('idle');
   const [savedList, setSavedList] = useState<SavedCalculation[]>(() => readSaved());
   const [showSaved, setShowSaved] = useState(false);
+  /** Cámara de origen mientras se eligen los destinos para copiar su configuración. */
+  const [copySource, setCopySource] = useState<{ dvrId: string; camId: string } | null>(null);
 
   /** Claves de material marcadas automáticamente por la causa de video. */
   const autoVideoMaterials = useRef<string[]>([]);
@@ -108,6 +111,7 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
     setDvrGroups([createDvr('DVR / NVR 1', 'analog', false, 4)]);
     setIgnoreCap(false);
     setCapReason('');
+    setCopySource(null);
     autoVideoMaterials.current = [];
   }, []);
 
@@ -241,22 +245,43 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
             createCamera(`Cámara ${d.cameras.length + i + 1}`, sys, false)),
         ],
       })),
-      applyCameraToAll: (dvrId, camId) => mapDvr(dvrId, d => {
+      openCopyCamera: (dvrId, camId) => setCopySource({ dvrId, camId }),
+      duplicateCamera: (dvrId, camId) => mapDvr(dvrId, d => {
+        const index = d.cameras.findIndex(camera => camera.id === camId);
+        if (index < 0) return d;
+
+        const source = d.cameras[index];
+        const copy: CameraGroup = {
+          ...source,
+          id: uid(),
+          label: `${source.label || 'Cámara'} (copia)`,
+          expanded: true,
+          photos: [],
+          note: '',
+          tasks: Object.fromEntries(Object.entries(source.tasks).map(([key, task]) => [key, { ...task }])),
+          difficulties: Object.fromEntries(Object.entries(source.difficulties).map(([key, diff]) => [key, { ...diff }])),
+        };
+
+        const cameras = [...d.cameras];
+        cameras.splice(index + 1, 0, copy);
+        return { ...d, cameras };
+      }),
+      applyCameraToSelected: (dvrId, camId, targetIds) => mapDvr(dvrId, d => {
         const source = d.cameras.find(camera => camera.id === camId);
         if (!source) return d;
 
+        const targets = new Set(targetIds);
         return {
           ...d,
-          cameras: d.cameras.map(camera => camera.id === camId ? camera : {
+          cameras: d.cameras.map(camera => targets.has(camera.id) ? {
             ...camera,
             distance: source.distance,
             height: source.height,
             cableDistance: source.cableDistance,
             cableHeight: source.cableHeight,
-            note: source.note,
             tasks: Object.fromEntries(Object.entries(source.tasks).map(([key, task]) => [key, { ...task }])),
             difficulties: Object.fromEntries(Object.entries(source.difficulties).map(([key, diff]) => [key, { ...diff }])),
-          }),
+          } : camera),
         };
       }),
       updateCamera: (dvrId, camId, patch) => mapCamera(dvrId, camId, c => ({ ...c, ...patch })),
@@ -472,6 +497,14 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
   const handleReset = useCallback(() => {
     if (window.confirm('¿Empezar un cálculo nuevo? Se descarta el actual.')) resetCalculator();
   }, [resetCalculator]);
+
+  /* Cámara de origen y grabador para el selector de copia. */
+  const copyTarget = useMemo(() => {
+    if (!copySource) return null;
+    const dvr = dvrGroups.find(group => group.id === copySource.dvrId);
+    const cam = dvr?.cameras.find(camera => camera.id === copySource.camId);
+    return dvr && cam ? { dvr, cam } : null;
+  }, [copySource, dvrGroups]);
 
   return (
     <>
@@ -786,6 +819,19 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
         onLoad={handleLoadSaved}
         onDelete={handleDeleteSaved}
       />
+
+      {copyTarget && (
+        <CopyCameraModal
+          show
+          source={copyTarget.cam}
+          cameras={copyTarget.dvr.cameras}
+          onHide={() => setCopySource(null)}
+          onConfirm={targetIds => {
+            actions.applyCameraToSelected(copyTarget.dvr.id, copyTarget.cam.id, targetIds);
+            setCopySource(null);
+          }}
+        />
+      )}
     </>
   );
 }

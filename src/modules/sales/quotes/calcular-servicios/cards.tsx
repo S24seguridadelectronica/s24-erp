@@ -1,7 +1,7 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import { Badge, Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
 import {
-  AlertTriangle, ArrowUp, Camera, ChevronDown, ChevronUp, Copy, HardDrive, MapPin, PlusCircle, Ruler, Trash2, Video, Wrench,
+  AlertTriangle, ArrowUp, Camera, ChevronDown, ChevronUp, Copy, Files, HardDrive, MapPin, PlusCircle, Ruler, Trash2, Video, Wrench,
 } from 'lucide-react';
 import { CAMERA_DIFFICULTIES, DVR_DIFFICULTIES, SYSTEMS } from './catalog';
 import type { Prices, SystemType } from './catalog';
@@ -21,7 +21,9 @@ export interface Actions {
   patchDvrTask: (id: string, key: string, patch: Partial<MaterialState>) => void;
   addCamera: (dvrId: string, system: SystemType) => void;
   addCameras: (dvrId: string, count: number, system: SystemType) => void;
-  applyCameraToAll: (dvrId: string, camId: string) => void;
+  openCopyCamera: (dvrId: string, camId: string) => void;
+  duplicateCamera: (dvrId: string, camId: string) => void;
+  applyCameraToSelected: (dvrId: string, camId: string, targetIds: string[]) => void;
   updateCamera: (dvrId: string, camId: string, patch: Partial<CameraGroup>) => void;
   removeCamera: (dvrId: string, camId: string) => void;
   patchCameraTask: (dvrId: string, camId: string, key: string, patch: Partial<MaterialState>) => void;
@@ -31,10 +33,10 @@ export interface Actions {
 export interface CameraCardProps {
   dvrId: string; cam: CameraGroup; system: SystemType; prices: Prices; actions: Actions;
   /** Hay más cámaras en el grabador a las que se puede copiar la configuración. */
-  canApplyToAll?: boolean;
+  canCopy?: boolean;
 }
 
-export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices, actions, canApplyToAll = false }: CameraCardProps) {
+export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices, actions, canCopy = false }: CameraCardProps) {
   const tasks = SYSTEMS[system].cameraTasks;
   const acc = useMemo(() => cameraAccess(cam, prices), [cam, prices]);
   const cable = useMemo(
@@ -88,13 +90,18 @@ export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices,
             <span className="small text-muted ms-2 text-truncate" style={{ maxWidth: 250 }}>{summary}</span>
           )}
         </div>
-        {canApplyToAll && (
+        {canCopy && (
           <Button variant="outline-secondary" size="sm" className="me-1"
-            title="Aplicar tareas, distancias y dificultades a las demás cámaras"
-            onClick={e => { e.stopPropagation(); actions.applyCameraToAll(dvrId, cam.id); }}>
+            title="Copiar configuración a otras cámaras"
+            onClick={e => { e.stopPropagation(); actions.openCopyCamera(dvrId, cam.id); }}>
             <Copy size={14} />
           </Button>
         )}
+        <Button variant="outline-secondary" size="sm" className="me-1"
+          title="Duplicar esta cámara"
+          onClick={e => { e.stopPropagation(); actions.duplicateCamera(dvrId, cam.id); }}>
+          <Files size={14} />
+        </Button>
         <Button variant="outline-danger" size="sm"
           onClick={e => { e.stopPropagation(); actions.removeCamera(dvrId, cam.id); }}>
           <Trash2 size={14} />
@@ -334,7 +341,7 @@ export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, a
           </div>
         ) : dvr.cameras.map(cam => (
           <CameraCard key={cam.id} dvrId={dvr.id} cam={cam} system={system} prices={prices} actions={actions}
-            canApplyToAll={dvr.cameras.length > 1} />
+            canCopy={dvr.cameras.length > 1} />
         ))}
       </Card.Body>
     </Card>
