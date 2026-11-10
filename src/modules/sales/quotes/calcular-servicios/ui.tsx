@@ -93,13 +93,15 @@ export interface ItemRowProps {
   priceWidth: number;
   totalOf?: (key: string) => number;
   disabled?: boolean;
+  /** Contenido extra que se despliega justo debajo de esta fila. */
+  after?: ReactNode;
 }
 
 /**
  * Fila de tarea. El nombre ocupa su propia línea para que en el celular la
  * cantidad y el precio no queden fuera de pantalla.
  */
-export const ItemRow = memo(function ItemRow({ def, state, patch, priceWidth, totalOf, disabled }: ItemRowProps) {
+export const ItemRow = memo(function ItemRow({ def, state, patch, priceWidth, totalOf, disabled, after }: ItemRowProps) {
   return (
     <div className={`border-top py-2 ${disabled ? 'opacity-50' : ''}`}>
       <Form.Check
@@ -126,6 +128,8 @@ export const ItemRow = memo(function ItemRow({ def, state, patch, priceWidth, to
         />
         <span className="small fw-semibold ms-auto">{money(totalOf ? totalOf(def.key) : lineTotal(state))}</span>
       </div>
+
+      {after}
     </div>
   );
 });
@@ -135,9 +139,11 @@ export interface ItemRowsProps {
   patch: (key: string, p: Partial<MaterialState>) => void;
   priceWidth?: number;
   totalOf?: (key: string) => number; disabled?: boolean;
+  /** Contenido extra debajo de una fila concreta (p. ej. detalle del cableado). */
+  afterRow?: (def: CatalogItem) => ReactNode;
 }
 
-export function ItemRows({ defs, state, patch, priceWidth = 160, totalOf, disabled }: ItemRowsProps) {
+export function ItemRows({ defs, state, patch, priceWidth = 160, totalOf, disabled, afterRow }: ItemRowsProps) {
   return (
     <>
       {defs.map(def => (
@@ -149,6 +155,7 @@ export function ItemRows({ defs, state, patch, priceWidth = 160, totalOf, disabl
           priceWidth={priceWidth}
           totalOf={totalOf}
           disabled={disabled}
+          after={afterRow?.(def)}
         />
       ))}
     </>

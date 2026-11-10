@@ -68,6 +68,36 @@ export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices,
     ? 'Excluida de la cuenta'
     : tasks.filter(d => cam.tasks[d.key]?.selected).map(d => d.label).join(', ') || 'Sin servicio marcado';
 
+  /* Se despliega justo debajo de la fila "Cambio de cableado". */
+  const cablePanel = cam.tasks.cableChange?.selected ? (
+    <div className="mt-2 ms-4 p-2 bg-white rounded border">
+      <div className="small text-muted mb-2">
+        Cableado — base incluida: 0–10 m de distancia y 0–3 m de altura <strong>por punto</strong>.
+        Los metros extra se cobran por cada punto.
+      </div>
+      <Row className="g-2 mb-2">
+        <Col sm={6}>
+          <NumField id={`cam-cable-dist-${cam.id}`} size="sm" compact icon={MapPin} unit="m"
+            label="Distancia del cableado (m por punto, 0–10 base)" value={cam.cableDistance} onChange={setCableDistance} />
+        </Col>
+        <Col sm={6}>
+          <NumField id={`cam-cable-height-${cam.id}`} size="sm" compact icon={ArrowUp} unit="m"
+            label="Altura del cableado (m por punto, 0–3 base)" value={cam.cableHeight} onChange={setCableHeight} />
+        </Col>
+      </Row>
+      <div className="small text-muted" style={{ lineHeight: 1.4 }}>
+        <Row2 l={`Base: ${money(cam.tasks.cableChange.unitPrice)} × ${cam.tasks.cableChange.quantity} punto(s)`} r={money(cable.baseAmount)} />
+        {cable.extraDistance > 0 && (
+          <Row2 l={`${cable.extraDistance} m dist extra × ${money(prices.pCableDistanceRate)}/m`} r={money(cable.distanceExcess)} />
+        )}
+        {cable.extraHeight > 0 && (
+          <Row2 l={`${cable.extraHeight} m alt extra × ${money(prices.pCableHeightRate)}/m`} r={money(cable.heightExcess)} />
+        )}
+        <Row2 className="border-top pt-1 mt-1" l={<strong>Subtotal cableado (fuera del tope)</strong>} r={<strong>{money(cable.total)}</strong>} />
+      </div>
+    </div>
+  ) : null;
+
   return (
     <Card className={`mb-3 border shadow-sm ${!cam.active ? 'opacity-50' : ''}`}>
       <Card.Header className="bg-white d-flex justify-content-between align-items-center py-2" style={{ cursor: 'pointer' }}
@@ -128,36 +158,8 @@ export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices,
             defs={tasks} state={cam.tasks} disabled={!cam.active}
             patch={patchTask}
             totalOf={totalOf}
+            afterRow={def => (def.key === 'cableChange' ? cablePanel : null)}
           />
-
-          {cam.tasks.cableChange?.selected && (
-            <div className="mt-2 ms-4 p-2 bg-white rounded border">
-              <div className="small text-muted mb-2">
-                Cableado — base incluida: 0–10 m de distancia y 0–3 m de altura <strong>por punto</strong>.
-                Los metros extra se cobran por cada punto.
-              </div>
-              <Row className="g-2 mb-2">
-                <Col sm={6}>
-                  <NumField id={`cam-cable-dist-${cam.id}`} size="sm" compact icon={MapPin} unit="m"
-                    label="Distancia del cableado (m por punto, 0–10 base)" value={cam.cableDistance} onChange={setCableDistance} />
-                </Col>
-                <Col sm={6}>
-                  <NumField id={`cam-cable-height-${cam.id}`} size="sm" compact icon={ArrowUp} unit="m"
-                    label="Altura del cableado (m por punto, 0–3 base)" value={cam.cableHeight} onChange={setCableHeight} />
-                </Col>
-              </Row>
-              <div className="small text-muted" style={{ lineHeight: 1.4 }}>
-                <Row2 l={`Base: ${money(cam.tasks.cableChange.unitPrice)} × ${cam.tasks.cableChange.quantity} punto(s)`} r={money(cable.baseAmount)} />
-                {cable.extraDistance > 0 && (
-                  <Row2 l={`${cable.extraDistance} m dist extra × ${money(prices.pCableDistanceRate)}/m`} r={money(cable.distanceExcess)} />
-                )}
-                {cable.extraHeight > 0 && (
-                  <Row2 l={`${cable.extraHeight} m alt extra × ${money(prices.pCableHeightRate)}/m`} r={money(cable.heightExcess)} />
-                )}
-                <Row2 className="border-top pt-1 mt-1" l={<strong>Subtotal cableado (fuera del tope)</strong>} r={<strong>{money(cable.total)}</strong>} />
-              </div>
-            </div>
-          )}
 
           <div className="border-top pt-3 mt-3">
             <div className="d-flex justify-content-between align-items-center mb-2">
