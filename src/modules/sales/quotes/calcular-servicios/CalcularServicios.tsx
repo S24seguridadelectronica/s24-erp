@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Badge, Button, Card, Col, Form, Modal, Row } from 'react-bootstrap';
 import {
   Bookmark, Calculator, ClipboardList, Clock3, Copy, Eye, HardDrive, Info, MapPin, Package, PlusCircle, RotateCcw,
-  Send, Settings,
+  Send, Settings, Zap,
 } from 'lucide-react';
 import {
   AFFECTED_OPTIONS, CAUSE_SERVICES, DEFAULT_PRICES, DEVICE_OPTIONS, DEVICE_SERVICES, INITIAL_FORM, INTERNET_OPTIONS,
@@ -31,6 +31,10 @@ import { buildQuotePdf } from '@/services/api/quotePdf';
 /* =========================================================================
  * Componente principal
  * ========================================================================= */
+
+/** Marca o desmarca todas las tareas de un catálogo. */
+const setAllTasks = (items: Items, selected: boolean): Items =>
+  Object.fromEntries(Object.entries(items).map(([key, task]) => [key, { ...task, selected }]));
 
 export function CalcularServicios({ show, onHide, onAddItems, customerName }: CalcularServiciosProps) {
   /* Borrador previo (si la app se cerró a mitad del cálculo). */
@@ -293,6 +297,19 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
           } : camera),
         };
       }),
+      fullMaintenance: (dvrId) => setDvrGroups(prev => {
+        const scope = prev.filter(dvr => !dvrId || dvr.id === dvrId);
+        const allOn = scope.every(dvr =>
+          Object.values(dvr.maintenance).every(task => task.selected)
+          && dvr.cameras.every(camera => Object.values(camera.tasks).every(task => task.selected)));
+        const selected = !allOn;
+
+        return prev.map(dvr => (dvrId && dvr.id !== dvrId ? dvr : {
+          ...dvr,
+          maintenance: setAllTasks(dvr.maintenance, selected),
+          cameras: dvr.cameras.map(camera => ({ ...camera, tasks: setAllTasks(camera.tasks, selected) })),
+        }));
+      }),
       updateCamera: (dvrId, camId, patch) => mapCamera(dvrId, camId, c => ({ ...c, ...patch })),
       removeCamera: (dvrId, camId) =>
         mapDvr(dvrId, d => ({ ...d, cameras: d.cameras.filter(c => c.id !== camId) })),
@@ -309,6 +326,9 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
 
   /* ---- cálculos derivados ---- */
   const camerasWithWork = useMemo(() => countCamerasWithWork(dvrGroups, system), [dvrGroups, system]);
+  const allFullOn = useMemo(() => dvrGroups.every(dvr =>
+    Object.values(dvr.maintenance).every(task => task.selected)
+    && dvr.cameras.every(camera => Object.values(camera.tasks).every(task => task.selected))), [dvrGroups]);
   const laborTier = getLaborCap(camerasWithWork);
   const laborCap = laborTier.cap;
 
@@ -597,9 +617,21 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
                           <h6 className="fw-bold mb-1"><HardDrive size={16} className="me-1" /> Grabadores y sus Cámaras</h6>
                           <div className="text-muted small">Agrupe las cámaras según el {deviceName} al que están conectadas.</div>
                         </div>
-                        <Button variant="outline-primary" size="sm" onClick={addDvrGroup}>
-                          <PlusCircle size={14} className="me-1" /> Añadir otro Grabador
-                        </Button>
+                        <div className="d-flex gap-2 flex-wrap justify-content-end">
+                          <Button
+                            variant={allFullOn ? 'success' : 'outline-success'}
+                            size="sm"
+                            onClick={() => actions.fullMaintenance()}
+                            title={allFullOn
+                              ? 'Quitar todos los servicios de todos los grabadores y cámaras'
+                              : 'Marcar todos los servicios de todos los grabadores y cámaras'}
+                          >
+                            <Zap size={14} className="me-1" /> {allFullOn ? 'Quitar full' : 'Full mantenimiento'}
+                          </Button>
+                          <Button variant="outline-primary" size="sm" onClick={addDvrGroup}>
+                            <PlusCircle size={14} className="me-1" /> Añadir otro Grabador
+                          </Button>
+                        </div>
                       </div>
 
                       <Alert variant="info" className="py-2 px-3 small mb-3 border-info bg-info bg-opacity-10">

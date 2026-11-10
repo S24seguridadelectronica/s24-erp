@@ -1,7 +1,7 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import { Badge, Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
 import {
-  AlertTriangle, ArrowUp, Camera, ChevronDown, ChevronUp, Copy, Files, HardDrive, MapPin, PlusCircle, Ruler, Trash2, Video, Wrench,
+  AlertTriangle, ArrowUp, Camera, ChevronDown, ChevronUp, Copy, Files, HardDrive, MapPin, PlusCircle, Ruler, Trash2, Video, Wrench, Zap,
 } from 'lucide-react';
 import { CAMERA_DIFFICULTIES, DVR_DIFFICULTIES, SYSTEMS, getLaborCap } from './catalog';
 import type { Prices, SystemType } from './catalog';
@@ -24,6 +24,8 @@ export interface Actions {
   openCopyCamera: (dvrId: string, camId: string) => void;
   duplicateCamera: (dvrId: string, camId: string) => void;
   applyCameraToSelected: (dvrId: string, camId: string, targetIds: string[]) => void;
+  /** Marca todos los servicios del grabador y de sus cámaras (o de todos si no se pasa id). */
+  fullMaintenance: (dvrId?: string) => void;
   updateCamera: (dvrId: string, camId: string, patch: Partial<CameraGroup>) => void;
   removeCamera: (dvrId: string, camId: string) => void;
   patchCameraTask: (dvrId: string, camId: string, key: string, patch: Partial<MaterialState>) => void;
@@ -265,6 +267,13 @@ export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, a
   const addCamera = useCallback(() => actions.addCamera(dvr.id, system), [actions, dvr.id, system]);
   const [newCameraCount, setNewCameraCount] = useState('1');
 
+  /* ¿Todos los servicios del grabador y sus cámaras están marcados? */
+  const fullOn = useMemo(
+    () => Object.values(dvr.maintenance).every(task => task.selected)
+      && dvr.cameras.every(camera => Object.values(camera.tasks).every(task => task.selected)),
+    [dvr],
+  );
+
   const addCameras = useCallback(() => {
     const count = Math.max(1, Math.min(20, Number(newCameraCount) || 1));
     actions.addCameras(dvr.id, count, system);
@@ -282,7 +291,17 @@ export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, a
           <Form.Control size="sm" style={{ maxWidth: 200 }} value={dvr.label} disabled={!dvr.active}
             onChange={e => set({ label: e.target.value })} placeholder={`Ej: ${deviceName} Principal`} />
         </div>
-        <div className="d-flex align-items-center gap-2">
+        <div className="d-flex align-items-center gap-2 flex-wrap">
+          <Button
+            variant={fullOn ? 'success' : 'outline-success'}
+            size="sm"
+            onClick={() => actions.fullMaintenance(dvr.id)}
+            title={fullOn
+              ? 'Quitar todos los servicios de este grabador y sus cámaras'
+              : 'Marcar todos los servicios de este grabador y sus cámaras'}
+          >
+            <Zap size={14} className="me-1" /> {fullOn ? 'Quitar full' : 'Full'}
+          </Button>
           <InputGroup size="sm" style={{ maxWidth: 180 }}>
             <Form.Control
               type="number" min={1} max={20} value={newCameraCount}
