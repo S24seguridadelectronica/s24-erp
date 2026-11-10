@@ -1,24 +1,29 @@
 import { jsPDF } from 'jspdf';
 // @ts-ignore
 import autoTable from 'jspdf-autotable';
-import { parsePhotos } from '@/utils/quotePhotos';
+import { MAX_PHOTOS_IN_PDF, serializePhotos } from '@/utils/quotePhotos';
+import { quoteItemPhotos } from './quotes';
+import { evidenceDataUrl } from './storage';
 
 /**
  * Añade una página con el registro fotográfico de las evidencias tomadas en la
- * calculadora. Cada ítem puede traer varias fotos (JSON en `photo`).
- * Las imágenes repetidas se imprimen una sola vez.
+ * calculadora. Cada ítem puede traer varias fotos (rutas de Storage o base64).
+ * Las imágenes repetidas se imprimen una sola vez y se limita el total para
+ * que el PDF siga siendo enviable.
  */
 function addPhotoSection(doc: any, items: any[]) {
-  const seen = new Set<string>();
-  const photos: { src: string; description: string }[] = [];
+  const descriptions = new Map<string, string>();
 
   for (const item of items) {
-    for (const src of parsePhotos(item?.photo)) {
-      if (seen.has(src)) continue;
-      seen.add(src);
-      photos.push({ src, description: item.description || 'Evidencia' });
+    for (const src of quoteItemPhotos(item)) {
+      if (!descriptions.has(src)) descriptions.set(src, item.description || 'Evidencia');
     }
   }
+
+  const total = descriptions.size;
+  const photos = [...descriptions.entries()]
+    .slice(0, MAX_PHOTOS_IN_PDF)
+    .map(([src, description]) => ({ src, description }));
 
   if (photos.length === 0) return;
 
@@ -76,6 +81,21 @@ function addPhotoSection(doc: any, items: any[]) {
     }
 
     y += rowHeight;
+  }
+
+  if (total > photos.length) {
+    if (y + 12 > 282) {
+      doc.addPage();
+      y = 20;
+    }
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(90, 90, 90);
+    doc.text(
+      `Se muestran ${photos.length} de ${total} fotos. Las demás están en el historial del cliente.`,
+      marginX,
+      Math.min(y, 285),
+    );
   }
 }
 
@@ -224,14 +244,32 @@ export function buildQuotePdf(quote: any): { doc: any; filename: string } {
   return { doc, filename };
 }
 
+/** Convierte las fotos de Storage en data URLs para poder dibujarlas. */
+async function withPrintablePhotos(quote: any) {
+  const items = Array.isArray(quote.items) ? quote.items : [];
+
+  const resolved = await Promise.all(items.map(async (item: any) => {
+    const dataUrls: string[] = [];
+
+    for (const ref of quoteItemPhotos(item)) {
+      const dataUrl = await evidenceDataUrl(ref);
+      if (dataUrl) dataUrls.push(dataUrl);
+    }
+
+    return { ...item, photo: serializePhotos(dataUrls), photos: null };
+  }));
+
+  return { ...quote, items: resolved };
+}
+
 export async function generateQuotePdf(quote: any) {
-  const { doc, filename } = buildQuotePdf(quote);
+  const { doc, filename } = buildQuotePdf(await withPrintablePhotos(quote));
   doc.save(filename);
   return doc;
 }
 
 export async function generateQuotePdfBlob(quote: any): Promise<{ blob: Blob; filename: string }> {
-  const { doc, filename } = buildQuotePdf(quote);
+  const { doc, filename } = buildQuotePdf(await withPrintablePhotos(quote));
   return { blob: doc.output('blob'), filename };
 }
 

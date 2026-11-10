@@ -3,7 +3,7 @@ import { Modal, Button, Form, Row, Col, Alert, Spinner, Table, Card } from 'reac
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { createQuote, updateQuote, getNextQuoteNumber, getQuoteItems, type QuoteItem } from '@/services/api/quotes';
+import { createQuote, updateQuote, getNextQuoteNumber, getQuoteItems, quoteItemPhotos, type QuoteItem } from '@/services/api/quotes';
 import { getCustomers, updateCustomer } from '@/services/api/customers';
 import { getOpportunities, updateOpportunity } from '@/services/api/opportunities';
 import { getProducts } from '@/services/api/inventory';
@@ -12,7 +12,7 @@ import { Plus, Trash2, Target, DollarSign, Calendar, MessageSquare, Wrench, File
 import { CctvCalculatorModal } from './CctvCalculatorModal';
 import { CalcularServicios } from './calcular-servicios/CalcularServicios';
 import { createWorkOrderFromQuote } from '@/services/api/work-orders';
-import { parsePhotos } from '@/utils/quotePhotos';
+import { evidenceUrl } from '@/services/api/storage';
 
 const schema = z.object({
   quote_number: z.string().min(1, 'Número es requerido'),
@@ -187,6 +187,11 @@ export function QuoteForm({ show, onHide, quote, preselectedOpportunity, onSucce
     const newItems = [...items]; newItems[index] = { ...newItems[index], [field]: value }; setItems(newItems);
   };
 
+  /** Quita las fotos de un ítem (base64 antiguo y rutas de Storage). */
+  const removeItemPhotos = (index: number) => {
+    setItems(prev => prev.map((item, i) => (i === index ? { ...item, photo: null, photos: null } : item)));
+  };
+
   const calculateTotals = () => {
     const subtotal = items.reduce((sum, item) => sum + ((Number(item.quantity) || 0) * (Number(item.unit_price) || 0)), 0);
     const discountAmount = items.reduce((sum, item) => sum + ((Number(item.quantity) || 0) * (Number(item.unit_price) || 0) * (Number(item.discount) || 0) / 100), 0);
@@ -341,8 +346,8 @@ export function QuoteForm({ show, onHide, quote, preselectedOpportunity, onSucce
                   <td><Form.Select value={item.item_type} onChange={(e) => updateItem(index, 'item_type', e.target.value)}><option value="product">Producto</option><option value="service">Servicio</option></Form.Select></td>
                   <td>
                     <Form.Control value={item.description} onChange={(e) => updateItem(index, 'description', e.target.value)} placeholder="Descripción" />
-                    {item.photo && (
-                      <ItemPhotos value={item.photo} onRemove={() => updateItem(index, 'photo', null)} />
+                    {quoteItemPhotos(item).length > 0 && (
+                      <ItemPhotos photos={quoteItemPhotos(item).map(evidenceUrl)} onRemove={() => removeItemPhotos(index)} />
                     )}
                   </td>
                   <td><Form.Control type="number" min="1" value={item.quantity} onChange={(e) => updateItem(index, 'quantity', parseFloat(e.target.value) || 0)} /></td>
@@ -386,8 +391,7 @@ export function QuoteForm({ show, onHide, quote, preselectedOpportunity, onSucce
 }
 
 /** Miniaturas de las fotos de evidencia de un ítem de la cotización. */
-function ItemPhotos({ value, onRemove }: { value: string; onRemove: () => void }) {
-  const photos = parsePhotos(value);
+function ItemPhotos({ photos, onRemove }: { photos: string[]; onRemove: () => void }) {
   if (photos.length === 0) return null;
 
   return (

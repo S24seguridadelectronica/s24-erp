@@ -1,5 +1,7 @@
 import { supabase } from '../supabase/client';
 import { audit } from './audit';
+import { uploadEvidence } from './storage';
+import { parsePhotos } from '@/utils/quotePhotos';
 
 export interface QuoteItem {
   id?: number;
@@ -11,10 +13,63 @@ export interface QuoteItem {
   discount?: number;
   tax_rate?: number;
   total?: number;
-  /** Evidencia fotográfica en base64 (data:image/...). Se imprime en el PDF. */
+  /** Evidencia antigua en base64 (data:image/...). */
   photo?: string | null;
+  /** Rutas de las evidencias en Supabase Storage. */
+  photos?: string[] | null;
   /** Desglose estructurado del cálculo (categoría, topes, metros) para auditoría. */
   detail?: Record<string, unknown> | null;
+}
+
+/** Fotos de un ítem: rutas nuevas + base64 antiguo, sin repetir. */
+export function quoteItemPhotos(item: { photo?: string | null; photos?: string[] | null }): string[] {
+  const refs = [
+    ...(Array.isArray(item.photos) ? item.photos : []),
+    ...parsePhotos(item.photo),
+  ].filter(Boolean);
+
+  return Array.from(new Set(refs));
+}
+
+/** ¿La migración 005 ya agregó la columna `photos`? (se consulta una vez) */
+let photosColumnAvailable: boolean | null = null;
+async function supportsPhotosColumn(): Promise<boolean> {
+  if (photosColumnAvailable !== null) return photosColumnAvailable;
+
+  const { error } = await (supabase as any)
+    .from('quote_items')
+    .select('photos')
+    .limit(1);
+
+  photosColumnAvailable = !error;
+  return photosColumnAvailable;
+}
+
+/**
+ * Sube a Storage las fotos nuevas (base64) y conserva las rutas existentes.
+ * Si Storage no está configurado, guarda el base64 como antes.
+ */
+async function prepareItemPhotos(item: any): Promise<{ photo: string | null; photos: string[] | null }> {
+  const refs = parsePhotos(item.photo);
+  const existing: string[] = Array.isArray(item.photos)
+    ? item.photos.filter((value: unknown): value is string => typeof value === 'string')
+    : [];
+
+  if (!(await supportsPhotosColumn())) {
+    return { photo: item.photo || null, photos: null };
+  }
+
+  const paths = [...existing];
+  try {
+    for (const ref of refs) {
+      paths.push(ref.startsWith('data:') ? await uploadEvidence(ref, 'cotizaciones') : ref);
+    }
+  } catch (error) {
+    console.warn('[quotes] No se pudo subir la evidencia a Storage; se guarda en base64:', error);
+    return { photo: item.photo || null, photos: null };
+  }
+
+  return { photo: null, photos: paths.length > 0 ? paths : null };
 }
 
 /** Se lanza cuando faltan columnas opcionales (photo/detail) en quote_items. */
@@ -43,6 +98,7 @@ async function insertQuoteItems(rows: any[]): Promise<boolean> {
   const rowsWithoutOptional = rows.map(row => {
     const copy = { ...row };
     delete copy.photo;
+    delete copy.photos;
     delete copy.detail;
     return copy;
   });
@@ -162,7 +218,7 @@ export async function createQuote(quote: any, items: any[]) {
   let photosSaved = true;
 
   if (items && items.length > 0) {
-    const itemsWithQuoteId: any[] = items.map((item: any) => ({
+    const itemsWithQuoteId: any[] = await Promise.all(items.map(async (item: any) => ({
       quote_id: quoteData_result.id,
       item_type: item.item_type,
       description: item.description,
@@ -171,9 +227,9 @@ export async function createQuote(quote: any, items: any[]) {
       discount: item.discount || 0,
       tax_rate: item.tax_rate ?? 19,
       total: (item.quantity * item.unit_price) * (1 - (item.discount || 0) / 100) * (1 + (item.tax_rate ?? 19) / 100),
-      photo: item.photo || null,
-      detail: item.detail || null
-    }));
+      detail: item.detail || null,
+      ...(await prepareItemPhotos(item)),
+    })));
 
     photosSaved = await insertQuoteItems(itemsWithQuoteId);
   }
@@ -228,7 +284,7 @@ export async function updateQuote(id: number, quote: any) {
     if (deleteItemsError) throw deleteItemsError;
 
     if (items.length > 0) {
-      const itemsWithQuoteId: any[] = items.map((item: any) => ({
+      const itemsWithQuoteId: any[] = await Promise.all(items.map(async (item: any) => ({
         quote_id: id,
         item_type: item.item_type,
         description: item.description,
@@ -237,9 +293,9 @@ export async function updateQuote(id: number, quote: any) {
         discount: item.discount || 0,
         tax_rate: item.tax_rate ?? 19,
         total: (item.quantity * item.unit_price) * (1 - (item.discount || 0) / 100) * (1 + (item.tax_rate ?? 19) / 100),
-        photo: item.photo || null,
-        detail: item.detail || null
-      }));
+        detail: item.detail || null,
+        ...(await prepareItemPhotos(item)),
+      })));
 
       photosSaved = await insertQuoteItems(itemsWithQuoteId);
     }

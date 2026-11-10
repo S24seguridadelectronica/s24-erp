@@ -2,9 +2,9 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Alert, Badge, Button, Card, Col, Modal, Row, Spinner, Table } from 'react-bootstrap';
 import { Briefcase, Camera, FileText, History, ImageOff } from 'lucide-react';
 import { getWorkOrdersByCustomer } from '@/services/api/work-orders';
-import { getQuoteItems, getQuotesByCustomer } from '@/services/api/quotes';
+import { getQuoteItems, getQuotesByCustomer, quoteItemPhotos } from '@/services/api/quotes';
 import { getPhotosForOrders, type WorkOrderPhoto } from '@/services/api/work-order-photos';
-import { parsePhotos } from '@/utils/quotePhotos';
+import { evidenceUrl } from '@/services/api/storage';
 
 interface CustomerHistoryModalProps {
   show: boolean;
@@ -48,6 +48,7 @@ interface QuoteItemRow {
   quantity: number;
   unit_price: number;
   photo?: string | null;
+  photos?: string[] | null;
 }
 
 const ORDER_STATUS: Record<string, { label: string; bg: string }> = {
@@ -344,7 +345,7 @@ export function CustomerHistoryModal({ show, onHide, customer }: CustomerHistory
                                   ) : (
                                     <div className="d-flex flex-column gap-3 py-2">
                                       {items.map(item => {
-                                        const itemPhotos = parsePhotos(item.photo);
+                                        const itemPhotos = quoteItemPhotos(item).map(evidenceUrl);
                                         return (
                                           <div key={item.id} className="d-flex justify-content-between gap-3 border-bottom pb-2">
                                             <div style={{ minWidth: 0 }}>

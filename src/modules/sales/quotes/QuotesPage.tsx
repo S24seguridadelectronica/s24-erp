@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Card, Table, Button, Badge, Spinner, Alert, Form, InputGroup, Modal, Row, Col } from 'react-bootstrap';
-import { getQuotes, deleteQuote, updateQuote, createQuote } from '@/services/api/quotes';
+import { getQuotes, deleteQuote, updateQuote, createQuote, getQuoteItems } from '@/services/api/quotes';
 import { FileText, Search, Edit2, Trash2, Send, CheckCircle, XCircle, Copy, FileDown, Filter, Clock, MessageCircle, Award, Receipt, Wrench } from 'lucide-react';
 import { QuoteForm } from './QuoteForm';
 import { generateQuotePdf } from '@/services/api/quotePdf';
@@ -80,13 +80,17 @@ export function QuotesPage() {
         terms: quote.terms || null,
         notes: `[Copia de ${quote.quote_number}] ${quote.notes || ''}`
       };
-      const items = (quote.items || []).map((item: any) => ({
+      const sourceItems = quote.items?.length ? quote.items : await getQuoteItems(quote.id);
+      const items = (sourceItems || []).map((item: any) => ({
         item_type: item.item_type,
         description: item.description,
         quantity: item.quantity,
         unit_price: item.unit_price,
         discount: item.discount || 0,
-        tax_rate: item.tax_rate ?? 19
+        tax_rate: item.tax_rate ?? 19,
+        photo: item.photo || null,
+        photos: item.photos || null,
+        detail: item.detail || null,
       }));
       await createQuote(newQuoteData, items);
       alert('✅ Cotización duplicada exitosamente');
