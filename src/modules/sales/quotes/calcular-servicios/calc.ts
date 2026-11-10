@@ -81,7 +81,9 @@ export const createDvr = (label: string, system: SystemType, included: boolean, 
 export function calcularAccesibilidadCamaras(distance: number, height: number, difficultyCost: number, prices: Prices) {
   const extraDistance = excess(distance, BASE.distance);
   const extraHeight = excess(height, BASE.height);
-  const distanceRate = prices.pAccessDistance + extraHeight * prices.pAccessHeightDistance;
+  /* Tarifas simples por metro adicional: distancia y altura se suman aparte
+   * del tope de mano de obra. */
+  const distanceRate = prices.pAccessDistance;
   const distanceCost = extraDistance * distanceRate;
   const heightCost = extraHeight * prices.pAccessHeight;
   return { extraDistance, extraHeight, distanceRate, distanceCost, heightCost, difficultyCost, total: distanceCost + heightCost + difficultyCost };

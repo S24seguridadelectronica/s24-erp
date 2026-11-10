@@ -166,7 +166,8 @@ export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices,
             </div>
 
             <div className="small text-muted mb-2 fst-italic bg-white p-2 rounded border">
-              * Precios base para 0-3m altura y 0-10m distancia sin obstáculos.
+              * Precios base para 0-3 m de altura y 0-10 m de distancia sin obstáculos.
+              Los metros extra se suman aparte del tope: {money(prices.pAccessDistance)}/m de distancia y {money(prices.pAccessHeight)}/m de altura.
             </div>
 
             <Row className="g-2 mb-3">

@@ -610,7 +610,7 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
                             <span className="text-muted">
                               Ajustado automáticamente según {camerasWithWork} cámara(s) con mano de obra ({laborTier.note}).
                               El mantenimiento del grabador usa el mismo tope según cuántos servicios se marquen.
-                              El cambio de cableado se cobra aparte y no consume este tope.
+                              La distancia y la altura extra se suman aparte del tope. El cambio de cableado se cobra aparte y no consume este tope.
                             </span>
                           </div>
                           <Form.Check

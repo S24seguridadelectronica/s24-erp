@@ -34,7 +34,6 @@ export const PRICE_CONFIG = [
   { key: 'pOther',                label: 'Evaluación de otro servicio',                       value: 80000 },
   { key: 'pAccessDistance',       label: 'Accesibilidad cámaras — metro de distancia adicional', value: 1500 },
   { key: 'pAccessHeight',         label: 'Accesibilidad cámaras — metro de altura adicional',    value: 15000 },
-  { key: 'pAccessHeightDistance', label: 'Accesibilidad cámaras — penalización por altura sobre la distancia (por metro)', value: 2000 },
   { key: 'pDvrAccessBase',        label: 'Accesibilidad DVR/NVR — base (0–10 m / 0–3 m / 0–4 canales)', value: 60000 },
   { key: 'pDvrAccessDistance',    label: 'Accesibilidad DVR/NVR — metro de distancia adicional',  value: 1500 },
   { key: 'pDvrAccessHeight',      label: 'Accesibilidad DVR/NVR — metro de altura adicional',     value: 15000 },
