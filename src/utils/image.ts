@@ -2,10 +2,10 @@
  * Compresión de imágenes para evidencias.
  *
  * Se guardan como JPEG en base64 (`data:image/jpeg;base64,...`), con un tamaño
- * máximo de 1024 px y calidad 0.7: suficiente para leerse en el PDF y en
- * pantalla sin inflar la base de datos.
+ * máximo de 1024 px y calidad 0.6: suficiente para leer equipos y obstáculos en
+ * pantalla y en el PDF, pesando ~30% menos que con calidad 0.7.
  */
-export const compressImage = (file: File, maxSize = 1024, quality = 0.7): Promise<string> =>
+export const compressImage = (file: File, maxSize = 1024, quality = 0.6): Promise<string> =>
   new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
