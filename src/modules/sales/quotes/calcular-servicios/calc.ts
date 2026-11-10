@@ -243,35 +243,45 @@ export function addMaintenanceLines(i: QuoteInput, add: AddLine) {
       }
       const laborCharged = noCap ? laborTotal : Math.min(laborTotal, laborCap);
 
-      /* --- Línea 1: mano de obra (con tope aplicado) --- */
-      if (laborCharged > 0) {
-        const parts: string[] = [laborDetails.join(' + ')];
+      /* Una sola línea por cámara: mano de obra (con tope) + accesibilidad.
+       * Distancia y altura quedan descritas dentro del concepto de la cámara y
+       * sus metros extra se suman aunque la mano de obra esté topada. */
+      const totalCamara = laborCharged + camAcc.total;
+
+      if (totalCamara > 0) {
+        const parts: string[] = [
+          `Distancia: ${nonNegative(cam.distance)} m (base 0–10)`,
+          `Altura: ${nonNegative(cam.height)} m (base 0–3)`,
+        ];
+
+        if (laborDetails.length > 0) parts.push(laborDetails.join(' + '));
         if (laborTotal > laborCap) {
           parts.push(noCap
             ? `Tope no aplicado (autorizado): ${money(laborTotal - laborCap)} adicionales`
             : `Tope de mano de obra aplicado: -${money(laborTotal - laborCap)}`);
         }
+        if (camAcc.extraDistance > 0) {
+          parts.push(`+${camAcc.extraDistance} m dist × ${money(camAcc.distanceRate)}/m`);
+        }
+        if (camAcc.extraHeight > 0) {
+          parts.push(`+${camAcc.extraHeight} m alt × ${money(prices.pAccessHeight)}/m`);
+        }
+        if (camAcc.difficultyCost > 0) parts.push(`+ Dificultades ${money(camAcc.difficultyCost)}`);
         if (cam.note?.trim()) parts.push(`Nota: ${cam.note.trim()}`);
+        if (cam.difficultyNote?.trim()) parts.push(`Dificultad: ${cam.difficultyNote.trim()}`);
         if (cam.photos.length > 0) parts.push(`📸 ${cam.photos.length} foto(s)`);
-        add(`cam-labor-${cam.id}`, `Mantenimiento Cámara: ${camName} (${dvrName})`, parts.join(' | '), laborCharged, 'service', cam.photos, {
-          categoria: 'mano_obra', camara: camName, bruto: laborTotal, tope: laborCap,
-          topeAplicado: laborTotal - laborCharged, topeIgnorado: noCap,
-          nota: cam.note?.trim() || null, fotos: cam.photos.length,
-        });
-      }
 
-      /* --- Línea 2: accesibilidad (si aplica) --- */
-      if (camAcc.total > 0) {
-        const accParts = ['Base 0-3m alt / 0-10m dist sin obstáculos'];
-        if (camAcc.extraDistance > 0) accParts.push(`+${camAcc.extraDistance}m dist extra`);
-        if (camAcc.extraHeight > 0) accParts.push(`+${camAcc.extraHeight}m alt extra`);
-        if (camAcc.difficultyCost > 0) accParts.push(`+ Dificultades (${money(camAcc.difficultyCost)})`);
-        if (cam.difficultyNote?.trim()) accParts.push(`Dificultad: ${cam.difficultyNote.trim()}`);
-        const accPhotos = cam.difficultyPhoto ? [cam.difficultyPhoto] : [];
-        add(`cam-access-${cam.id}`, `Accesibilidad Cámara: ${camName} (${dvrName})`, accParts.join(' · '), camAcc.total, 'service', accPhotos, {
-          categoria: 'accesibilidad', camara: camName, extraDistance: camAcc.extraDistance, extraHeight: camAcc.extraHeight,
-          dificultades: camAcc.difficultyCost, notaDificultad: cam.difficultyNote?.trim() || null,
-          fotoDificultad: Boolean(cam.difficultyPhoto),
+        const camPhotos = [...cam.photos, ...(cam.difficultyPhoto ? [cam.difficultyPhoto] : [])];
+
+        add(`cam-total-${cam.id}`, `Servicio Cámara: ${camName} (${dvrName})`, parts.join(' · '), totalCamara, 'service', camPhotos, {
+          categoria: 'servicio_camara', camara: camName,
+          distancia: nonNegative(cam.distance), altura: nonNegative(cam.height),
+          distanciaRate: camAcc.distanceRate, alturaRate: prices.pAccessHeight,
+          extraDistance: camAcc.extraDistance, extraHeight: camAcc.extraHeight,
+          dificultades: camAcc.difficultyCost,
+          bruto: laborTotal, tope: laborCap, topeAplicado: laborTotal - laborCharged, topeIgnorado: noCap,
+          nota: cam.note?.trim() || null, notaDificultad: cam.difficultyNote?.trim() || null,
+          fotoDificultad: Boolean(cam.difficultyPhoto), fotos: cam.photos.length,
         });
       }
 
