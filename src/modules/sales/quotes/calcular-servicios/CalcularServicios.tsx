@@ -607,6 +607,7 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
                             <br />
                             <span className="text-muted">
                               Ajustado automáticamente según {camerasWithWork} cámara(s) con mano de obra ({laborTier.note}).
+                              El mantenimiento del grabador usa el mismo tope según cuántos servicios se marquen.
                               El cambio de cableado se cobra aparte y no consume este tope.
                             </span>
                           </div>
@@ -634,7 +635,7 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
 
                       {dvrGroups.map(dvr => (
                         <DvrCard key={dvr.id} dvr={dvr} system={system} prices={prices}
-                          canRemove={dvrGroups.length > 1} actions={actions} />
+                          canRemove={dvrGroups.length > 1} actions={actions} noCap={ignoreCap} />
                       ))}
                     </Col>
                   )}

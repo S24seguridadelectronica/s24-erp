@@ -1,6 +1,6 @@
 import {
   AFFECTED, BASE, CAMERA_DIFFICULTIES, DVR_DIFFICULTIES, MAINTENANCE_MATERIALS, SURCHARGES, SYSTEMS, VIDEO_CAUSES,
-  VIDEO_MATERIALS,
+  VIDEO_MATERIALS, getLaborCap,
 } from './catalog';
 import type { Prices, ServiceForm, ServiceKey, SystemType } from './catalog';
 import type {
@@ -165,18 +165,34 @@ export function addMaintenanceLines(i: QuoteInput, add: AddLine) {
       });
     }
 
+    /* Mantenimiento del grabador: igual que la cámara, el tope de mano de obra
+     * baja a medida que se suman servicios (tramos por volumen). */
     const maintDetails: string[] = [];
-    let maintAmount = 0;
+    let maintRaw = 0;
+    let maintServices = 0;
     for (const def of dvrTasks) {
       const st = dvr.maintenance[def.key];
       const amount = lineTotal(st);
       if (!st.selected || amount <= 0) continue;
-      maintAmount += amount;
+      maintRaw += amount;
+      maintServices += 1;
       maintDetails.push(`${st.quantity > 1 ? `${st.quantity} ${def.unit} - ` : ''}${def.label}`);
     }
+
+    const maintTier = getLaborCap(maintServices);
+    const maintCap = maintTier.cap;
+    const maintAmount = noCap ? maintRaw : Math.min(maintRaw, maintCap);
+
+    if (maintRaw > maintCap) {
+      maintDetails.push(noCap
+        ? `Tope no aplicado (autorizado): ${money(maintRaw - maintCap)} adicionales`
+        : `Tope de mano de obra aplicado: -${money(maintRaw - maintCap)}`);
+    }
+
     if (dvr.note?.trim()) maintDetails.push(`Nota: ${dvr.note.trim()}`);
     if (maintAmount > 0) add(`dvr-maint-${dvr.id}`, `Mantenimiento Grabador: ${dvrName}`, maintDetails.join(' + '), maintAmount, 'service', dvr.photos, {
       categoria: 'mantenimiento_grabador', grabador: dvrName, fotos: dvr.photos.length, nota: dvr.note?.trim() || null,
+      servicios: maintServices, bruto: maintRaw, tope: maintCap, topeAplicado: maintRaw - maintAmount, topeIgnorado: noCap,
     });
 
     for (const cam of dvr.cameras) {
@@ -273,7 +289,7 @@ export function buildQuote(i: QuoteInput) {
   switch (service) {
     case 'maintenance':
       addMaintenanceLines(i, add);
-      script = `La cotización agrupa el mantenimiento para un sistema ${SYSTEMS[i.system].label}. Se aplicó un tope de mano de obra de ${money(i.laborCap)} por cámara (basado en ${i.camerasWithWork} cámaras intervenidas). El cambio de cableado, y los excedentes de altura y distancia, se cobran aparte y no entran en ese tope.`;
+      script = `La cotización agrupa el mantenimiento para un sistema ${SYSTEMS[i.system].label}. Se aplicó un tope de mano de obra de ${money(i.laborCap)} por cámara (basado en ${i.camerasWithWork} cámaras intervenidas). El mantenimiento del grabador usa el mismo esquema de tope por volumen según cuántos servicios se marquen. El cambio de cableado, y los excedentes de altura y distancia, se cobran aparte y no entran en ese tope.`;
       break;
 
     case 'video': {

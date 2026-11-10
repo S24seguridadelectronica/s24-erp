@@ -3,7 +3,7 @@ import { Badge, Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap
 import {
   AlertTriangle, ArrowUp, Camera, ChevronDown, ChevronUp, Copy, Files, HardDrive, MapPin, PlusCircle, Ruler, Trash2, Video, Wrench,
 } from 'lucide-react';
-import { CAMERA_DIFFICULTIES, DVR_DIFFICULTIES, SYSTEMS } from './catalog';
+import { CAMERA_DIFFICULTIES, DVR_DIFFICULTIES, SYSTEMS, getLaborCap } from './catalog';
 import type { Prices, SystemType } from './catalog';
 import type { CameraGroup, DifficultyState, DvrGroup, MaterialState } from './types';
 import { calcularMontoCableado, cameraAccess, dvrAccess, lineTotal, money, nonNegative, sumSelected } from './calc';
@@ -205,12 +205,23 @@ export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices,
 export interface DvrCardProps {
   dvr: DvrGroup; system: SystemType; prices: Prices;
   canRemove: boolean; actions: Actions;
+  /** El vendedor autorizó no aplicar el tope de mano de obra. */
+  noCap?: boolean;
 }
 
-export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, actions }: DvrCardProps) {
+export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, actions, noCap = false }: DvrCardProps) {
   const { deviceName, dvrTasks } = SYSTEMS[system];
   const acc = useMemo(() => dvrAccess(dvr, prices), [dvr, prices]);
   const maintenanceTotal = useMemo(() => sumSelected(dvr.maintenance), [dvr.maintenance]);
+
+  /* Mismo tope por volumen que la cámara: a más servicios, menor el tope. */
+  const maintenanceServices = useMemo(
+    () => Object.values(dvr.maintenance).filter(task => task.selected && lineTotal(task) > 0).length,
+    [dvr.maintenance],
+  );
+  const maintenanceTier = getLaborCap(maintenanceServices);
+  const maintenanceCharged = noCap ? maintenanceTotal : Math.min(maintenanceTotal, maintenanceTier.cap);
+  const capApplied = !noCap && maintenanceTotal > maintenanceCharged;
   const set = useCallback((patch: Partial<DvrGroup>) => actions.updateDvr(dvr.id, patch), [actions, dvr.id]);
   const patchMaintenance = useCallback(
     (key: string, p: Partial<MaterialState>) => actions.patchDvrTask(dvr.id, key, p),
@@ -330,10 +341,24 @@ export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, a
         </div>
 
         <div className="mb-4 p-3 border rounded bg-light">
-          <div className="d-flex justify-content-between align-items-center mb-3">
+          <div className="d-flex justify-content-between align-items-center mb-2">
             <h6 className="fw-bold mb-0 text-secondary"><Wrench size={16} className="me-1" /> Mantenimiento al {deviceName}</h6>
-            <Badge bg="success" text="dark">{money(maintenanceTotal)}</Badge>
+            <div className="text-end">
+              <Badge bg={capApplied ? 'warning' : 'success'} text="dark">{money(maintenanceCharged)}</Badge>
+              {capApplied && (
+                <div className="small text-muted"><s>{money(maintenanceTotal)}</s></div>
+              )}
+            </div>
           </div>
+
+          {maintenanceServices > 0 && (
+            <div className="small text-muted mb-2">
+              Tope de mano de obra: <strong>{money(maintenanceTier.cap)}</strong> para {maintenanceServices} servicio(s) ({maintenanceTier.note}).
+              {capApplied && <> Se aplicó un descuento de <strong>{money(maintenanceTotal - maintenanceCharged)}</strong>.</>}
+              {noCap && maintenanceTotal > maintenanceTier.cap && <> Tope no aplicado (autorizado).</>}
+            </div>
+          )}
+
           <ItemRows defs={dvrTasks} state={dvr.maintenance} disabled={!dvr.active}
             patch={patchMaintenance} />
         </div>
