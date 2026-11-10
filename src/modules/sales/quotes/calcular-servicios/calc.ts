@@ -151,8 +151,12 @@ export function addMaintenanceLines(i: QuoteInput, add: AddLine) {
     if (!dvr.active) continue;
     const dvrName = dvr.label.trim() || deviceName;
 
+    const acc = dvrAccess(dvr, prices);
+    /* La base es opcional (casilla), pero los excesos de distancia/altura,
+     * canales y dificultades siempre se suman: el tope no debe comérselos. */
+    const accessExtras = acc.distanceCost + acc.heightCost + acc.channelCost + acc.difficultyCost;
+
     if (dvr.included) {
-      const acc = dvrAccess(dvr, prices);
       const parts = [`${dvr.distance || 0} m al tomacorriente`, `${dvr.height || 0} m altura`, `${dvr.channels || 0} canales`];
       if (acc.extraDistance > 0) parts.push(`+${acc.extraDistance} m dist`);
       if (acc.extraHeight > 0) parts.push(`+${acc.extraHeight} m alt`);
@@ -164,6 +168,19 @@ export function addMaintenanceLines(i: QuoteInput, add: AddLine) {
       const dvrPhotos = [...dvr.photos, ...(dvr.difficultyPhoto ? [dvr.difficultyPhoto] : [])];
       add(`dvr-accessibility-${dvr.id}`, `Accesibilidad Grabador: ${dvrName}`, parts.join(' · '), acc.total, 'service', dvrPhotos, {
         categoria: 'accesibilidad_grabador', grabador: dvrName, nota: dvr.note?.trim() || null,
+        notaDificultad: dvr.difficultyNote?.trim() || null, fotoDificultad: Boolean(dvr.difficultyPhoto),
+        extraDistance: acc.extraDistance, extraHeight: acc.extraHeight, canalesExtra: acc.extraChannels, dificultades: acc.difficultyCost,
+      });
+    } else if (accessExtras > 0) {
+      const parts = ['Base de accesibilidad no aplicada'];
+      if (acc.extraDistance > 0) parts.push(`+${acc.extraDistance} m dist`);
+      if (acc.extraHeight > 0) parts.push(`+${acc.extraHeight} m alt`);
+      if (acc.extraChannels > 0) parts.push(`+${acc.extraChannels} canales`);
+      if (acc.difficultyCost > 0) parts.push('+ Dificultades físicas');
+      if (dvr.difficultyNote?.trim()) parts.push(`Dificultad: ${dvr.difficultyNote.trim()}`);
+      const extrasPhotos = dvr.difficultyPhoto ? [dvr.difficultyPhoto] : [];
+      add(`dvr-access-extras-${dvr.id}`, `Accesibilidad Grabador (extras): ${dvrName}`, parts.join(' · '), accessExtras, 'service', extrasPhotos, {
+        categoria: 'accesibilidad_grabador_extras', grabador: dvrName,
         notaDificultad: dvr.difficultyNote?.trim() || null, fotoDificultad: Boolean(dvr.difficultyPhoto),
         extraDistance: acc.extraDistance, extraHeight: acc.extraHeight, canalesExtra: acc.extraChannels, dificultades: acc.difficultyCost,
       });

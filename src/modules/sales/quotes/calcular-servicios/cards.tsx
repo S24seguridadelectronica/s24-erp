@@ -241,6 +241,15 @@ export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, a
   const maintenanceTier = getLaborCap(maintenanceServices);
   const maintenanceCharged = noCap ? maintenanceTotal : Math.min(maintenanceTotal, maintenanceTier.cap);
   const capApplied = !noCap && maintenanceTotal > maintenanceCharged;
+
+  /* Excesos que se suman siempre, aunque no se cobre la base de accesibilidad. */
+  const accessExtras = acc.distanceCost + acc.heightCost + acc.channelCost + acc.difficultyCost;
+  const accessRows: [string, number][] = [
+    ...(dvr.included ? [['Base (0–10 m / 0–3 m / 0–4 canales)', acc.base] as [string, number]] : []),
+    [acc.extraDistance > 0 ? `${acc.extraDistance} m dist × ${money(prices.pDvrAccessDistance)}/m` : 'Sin metros adicionales', acc.distanceCost],
+    [acc.extraHeight > 0 ? `${acc.extraHeight} m alt × ${money(prices.pDvrAccessHeight)}/m` : 'Sin metros de altura', acc.heightCost],
+    [acc.extraChannels > 0 ? `${acc.extraChannels} canal(es) extra × ${money(prices.pDvrExtraChannel)}` : 'Sin canales adicionales', acc.channelCost],
+  ];
   const set = useCallback((patch: Partial<DvrGroup>) => actions.updateDvr(dvr.id, patch), [actions, dvr.id]);
   const patchMaintenance = useCallback(
     (key: string, p: Partial<MaterialState>) => actions.patchDvrTask(dvr.id, key, p),
@@ -313,14 +322,16 @@ export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, a
             <Form.Check type="checkbox" checked={dvr.included} disabled={!dvr.active}
               onChange={e => set({ included: e.target.checked })}
               label={<span className="fw-semibold small text-primary">Cobrar accesibilidad de este Grabador</span>} />
-            {dvr.included && <Badge bg="info" text="dark">{money(acc.total)}</Badge>}
+            <Badge bg="info" text="dark">{money(dvr.included ? acc.total : accessExtras)}</Badge>
           </div>
 
-          {dvr.included && (
-            <>
-              <div className="text-muted small mt-1 mb-2">Base: 0–10 m al tomacorriente, 0–3 m de altura y hasta 4 canales.</div>
+          <div className="text-muted small mt-1 mb-2">
+            {dvr.included
+              ? 'Base: 0–10 m al tomacorriente, 0–3 m de altura y hasta 4 canales.'
+              : 'Sin base: los metros extra, canales y dificultades se cobran aparte.'}
+          </div>
 
-              <Row className="g-2 mt-1">
+          <Row className="g-2 mt-1">
                 <Col md={4}>
                   <NumField id={`dvr-dist-${dvr.id}`} size="sm" icon={MapPin} unit="m" label="Dist. al tomacorriente (0–10 m base)"
                     value={dvr.distance} onChange={v => set({ distance: v })} />
@@ -336,12 +347,7 @@ export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, a
               </Row>
 
               <div className="mb-3">
-                <Breakdown rows={[
-                  ['Base (0–10 m / 0–3 m / 0–4 canales)', acc.base],
-                  [acc.extraDistance > 0 ? `${acc.extraDistance} m dist × ${money(prices.pDvrAccessDistance)}/m` : 'Sin metros adicionales', acc.distanceCost],
-                  [acc.extraHeight > 0 ? `${acc.extraHeight} m alt × ${money(prices.pDvrAccessHeight)}/m` : 'Sin metros de altura', acc.heightCost],
-                  [acc.extraChannels > 0 ? `${acc.extraChannels} canal(es) extra × ${money(prices.pDvrExtraChannel)}` : 'Sin canales adicionales', acc.channelCost],
-                ]} />
+                <Breakdown rows={accessRows} />
               </div>
 
               <PhotoGallery photos={dvr.photos} label="Fotos del Grabador" size={80} max={MAX_PHOTOS_PER_EQUIPMENT}
@@ -374,8 +380,6 @@ export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, a
                   />
                 </Form.Group>
               </div>
-            </>
-          )}
         </div>
 
         <div className="mb-4 p-3 border rounded bg-light">
