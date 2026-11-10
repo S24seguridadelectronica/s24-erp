@@ -139,11 +139,11 @@ export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices,
               <Row className="g-2 mb-2">
                 <Col sm={6}>
                   <NumField id={`cam-cable-dist-${cam.id}`} size="sm" compact icon={MapPin} unit="m"
-                    label="Distancia del cableado (m por punto)" value={cam.cableDistance} onChange={setCableDistance} />
+                    label="Distancia del cableado (m por punto, 0–10 base)" value={cam.cableDistance} onChange={setCableDistance} />
                 </Col>
                 <Col sm={6}>
                   <NumField id={`cam-cable-height-${cam.id}`} size="sm" compact icon={ArrowUp} unit="m"
-                    label="Altura del cableado (m por punto)" value={cam.cableHeight} onChange={setCableHeight} />
+                    label="Altura del cableado (m por punto, 0–3 base)" value={cam.cableHeight} onChange={setCableHeight} />
                 </Col>
               </Row>
               <div className="small text-muted" style={{ lineHeight: 1.4 }}>
@@ -171,11 +171,11 @@ export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices,
 
             <Row className="g-2 mb-3">
               <Col sm={6}>
-                <NumField id={`cam-dist-${cam.id}`} size="sm" icon={MapPin} unit="m" label="Distancia al grabador (m)"
+                <NumField id={`cam-dist-${cam.id}`} size="sm" icon={MapPin} unit="m" label="Distancia al grabador (0–10 m base)"
                   value={cam.distance} onChange={setDistance} />
               </Col>
               <Col sm={6}>
-                <NumField id={`cam-height-${cam.id}`} size="sm" icon={ArrowUp} unit="m" label="Altura (m)"
+                <NumField id={`cam-height-${cam.id}`} size="sm" icon={ArrowUp} unit="m" label="Altura (0–3 m base)"
                   value={cam.height} onChange={setHeight} />
               </Col>
             </Row>
@@ -192,6 +192,25 @@ export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices,
 
             <DifficultyList idPrefix={`cam-diff-${cam.id}`} defs={CAMERA_DIFFICULTIES} state={cam.difficulties} colSm={12}
               onPatch={patchDifficulty} />
+
+            <PhotoGallery
+              photos={cam.difficultyPhoto ? [cam.difficultyPhoto] : []}
+              label="Foto del obstáculo o dificultad"
+              size={70}
+              max={1}
+              icon={Camera}
+              onChange={photos => set({ difficultyPhoto: photos[0] ?? null })}
+            />
+            <Form.Group className="mt-2" controlId={`cam-diff-note-${cam.id}`}>
+              <Form.Label className="small fw-semibold">Descripción de la dificultad (opcional)</Form.Label>
+              <Form.Control
+                as="textarea" rows={2} maxLength={200}
+                value={cam.difficultyNote ?? ''}
+                disabled={!cam.active}
+                onChange={e => set({ difficultyNote: e.target.value })}
+                placeholder="Ej: cámara sobre el techo, se necesita andamio"
+              />
+            </Form.Group>
           </div>
 
           <PhotoGallery photos={cam.photos} label="Fotos de la Cámara" size={60} max={MAX_PHOTOS_PER_EQUIPMENT}
@@ -303,11 +322,11 @@ export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, a
 
               <Row className="g-2 mt-1">
                 <Col md={4}>
-                  <NumField id={`dvr-dist-${dvr.id}`} size="sm" icon={MapPin} unit="m" label="Dist. al tomacorriente"
+                  <NumField id={`dvr-dist-${dvr.id}`} size="sm" icon={MapPin} unit="m" label="Dist. al tomacorriente (0–10 m base)"
                     value={dvr.distance} onChange={v => set({ distance: v })} />
                 </Col>
                 <Col md={4}>
-                  <NumField id={`dvr-height-${dvr.id}`} size="sm" icon={ArrowUp} unit="m" label="Altura"
+                  <NumField id={`dvr-height-${dvr.id}`} size="sm" icon={ArrowUp} unit="m" label="Altura (0–3 m base)"
                     value={dvr.height} onChange={v => set({ height: v })} />
                 </Col>
                 <Col md={4}>
@@ -335,6 +354,25 @@ export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, a
                 </div>
                 <DifficultyList idPrefix={`diff-${dvr.id}`} defs={DVR_DIFFICULTIES} state={dvr.difficulties} colSm={6}
                   onPatch={patchDifficulty} />
+
+                <PhotoGallery
+                  photos={dvr.difficultyPhoto ? [dvr.difficultyPhoto] : []}
+                  label="Foto del obstáculo o dificultad"
+                  size={70}
+                  max={1}
+                  icon={Camera}
+                  onChange={photos => set({ difficultyPhoto: photos[0] ?? null })}
+                />
+                <Form.Group className="mt-2" controlId={`dvr-diff-note-${dvr.id}`}>
+                  <Form.Label className="small fw-semibold">Descripción de la dificultad (opcional)</Form.Label>
+                  <Form.Control
+                    as="textarea" rows={2} maxLength={200}
+                    value={dvr.difficultyNote ?? ''}
+                    disabled={!dvr.active}
+                    onChange={e => set({ difficultyNote: e.target.value })}
+                    placeholder="Ej: grabador en rack de espaldas, sin espacio para maniobrar"
+                  />
+                </Form.Group>
               </div>
             </>
           )}

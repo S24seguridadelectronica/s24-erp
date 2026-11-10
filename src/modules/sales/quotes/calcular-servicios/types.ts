@@ -50,6 +50,10 @@ export interface CameraGroup {
   difficulties: Difficulties;
   /** Observación del técnico sobre esta cámara. Viaja a la cotización. */
   note?: string;
+  /** Foto del obstáculo o dificultad de acceso a la cámara. */
+  difficultyPhoto?: string | null;
+  /** Descripción de la dificultad de acceso a la cámara. */
+  difficultyNote?: string;
 }
 
 export interface DvrGroup {
@@ -58,6 +62,10 @@ export interface DvrGroup {
   difficulties: Difficulties; maintenance: Items; cameras: CameraGroup[];
   /** Observación del técnico sobre este grabador. */
   note?: string;
+  /** Foto del obstáculo o dificultad de acceso al grabador. */
+  difficultyPhoto?: string | null;
+  /** Descripción de la dificultad de acceso al grabador. */
+  difficultyNote?: string;
 }
 
 export type VideoCause = 'balun' | 'power' | 'splice' | 'cable' | 'camera' | 'dvr-channel' | 'unknown';

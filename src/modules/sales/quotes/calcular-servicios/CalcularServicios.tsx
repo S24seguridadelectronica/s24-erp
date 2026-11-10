@@ -265,6 +265,8 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
           expanded: true,
           photos: [],
           note: '',
+          difficultyPhoto: null,
+          difficultyNote: '',
           tasks: Object.fromEntries(Object.entries(source.tasks).map(([key, task]) => [key, { ...task }])),
           difficulties: Object.fromEntries(Object.entries(source.difficulties).map(([key, diff]) => [key, { ...diff }])),
         };

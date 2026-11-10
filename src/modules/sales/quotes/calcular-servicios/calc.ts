@@ -58,18 +58,19 @@ export const createCamera = (label: string, system: SystemType, expanded = true)
   photos: [],
   expanded,
   active: true,
-  distance: String(BASE.distance),
-  height: String(BASE.height),
-  cableDistance: String(BASE.distance),
-  cableHeight: String(BASE.height),
+  // Se digitan metros por encima de la base (0–10 m distancia / 0–3 m altura).
+  distance: '0',
+  height: '0',
+  cableDistance: '0',
+  cableHeight: '0',
   difficulties: initDifficulties(CAMERA_DIFFICULTIES),
 });
 
 export const createDvr = (label: string, system: SystemType, included: boolean, cameraCount: number): DvrGroup => ({
   id: uid(),
   label, included, active: true,
-  distance: String(BASE.distance),
-  height: String(BASE.height),
+  distance: '0',
+  height: '0',
   channels: String(BASE.dvrChannels),
   photos: [],
   difficulties: initDifficulties(DVR_DIFFICULTIES),
@@ -157,10 +158,13 @@ export function addMaintenanceLines(i: QuoteInput, add: AddLine) {
       if (acc.extraHeight > 0) parts.push(`+${acc.extraHeight} m alt`);
       if (acc.extraChannels > 0) parts.push(`+${acc.extraChannels} canales`);
       if (acc.difficultyCost > 0) parts.push('+ Dificultades físicas');
+      if (dvr.difficultyNote?.trim()) parts.push(`Dificultad: ${dvr.difficultyNote.trim()}`);
       if (dvr.note?.trim()) parts.push(`Nota: ${dvr.note.trim()}`);
       if (dvr.photos.length > 0) parts.push(`📸 ${dvr.photos.length} foto(s)`);
-      add(`dvr-accessibility-${dvr.id}`, `Accesibilidad Grabador: ${dvrName}`, parts.join(' · '), acc.total, 'service', dvr.photos, {
+      const dvrPhotos = [...dvr.photos, ...(dvr.difficultyPhoto ? [dvr.difficultyPhoto] : [])];
+      add(`dvr-accessibility-${dvr.id}`, `Accesibilidad Grabador: ${dvrName}`, parts.join(' · '), acc.total, 'service', dvrPhotos, {
         categoria: 'accesibilidad_grabador', grabador: dvrName, nota: dvr.note?.trim() || null,
+        notaDificultad: dvr.difficultyNote?.trim() || null, fotoDificultad: Boolean(dvr.difficultyPhoto),
         extraDistance: acc.extraDistance, extraHeight: acc.extraHeight, canalesExtra: acc.extraChannels, dificultades: acc.difficultyCost,
       });
     }
@@ -243,8 +247,12 @@ export function addMaintenanceLines(i: QuoteInput, add: AddLine) {
         if (camAcc.extraDistance > 0) accParts.push(`+${camAcc.extraDistance}m dist extra`);
         if (camAcc.extraHeight > 0) accParts.push(`+${camAcc.extraHeight}m alt extra`);
         if (camAcc.difficultyCost > 0) accParts.push(`+ Dificultades (${money(camAcc.difficultyCost)})`);
-        add(`cam-access-${cam.id}`, `Accesibilidad Cámara: ${camName} (${dvrName})`, accParts.join(' · '), camAcc.total, 'service', [], {
-          categoria: 'accesibilidad', camara: camName, extraDistance: camAcc.extraDistance, extraHeight: camAcc.extraHeight, dificultades: camAcc.difficultyCost,
+        if (cam.difficultyNote?.trim()) accParts.push(`Dificultad: ${cam.difficultyNote.trim()}`);
+        const accPhotos = cam.difficultyPhoto ? [cam.difficultyPhoto] : [];
+        add(`cam-access-${cam.id}`, `Accesibilidad Cámara: ${camName} (${dvrName})`, accParts.join(' · '), camAcc.total, 'service', accPhotos, {
+          categoria: 'accesibilidad', camara: camName, extraDistance: camAcc.extraDistance, extraHeight: camAcc.extraHeight,
+          dificultades: camAcc.difficultyCost, notaDificultad: cam.difficultyNote?.trim() || null,
+          fotoDificultad: Boolean(cam.difficultyPhoto),
         });
       }
 
