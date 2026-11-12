@@ -10,7 +10,7 @@ import type { CatalogItem, Option, VideoCause } from './types';
 export const SERVICES = {
   maintenance:   { icon: Wrench,     label: 'Mantenimiento preventivo',    name: 'Mantenimiento preventivo',            description: 'Revisión, limpieza y pruebas del sistema.' },
   video:         { icon: Video,      label: 'Pérdida de video',            name: 'Atención por pérdida de video',       description: 'Una o varias cámaras no muestran imagen.' },
-  reset:         { icon: RotateCcw,  label: 'Reseteo DVR/NVR',             name: 'Reseteo DVR/NVR',                     description: 'Restablecimiento sujeto a compatibilidad.' },
+  reset:         { icon: RotateCcw,  label: 'Desmonte y limpieza general', name: 'Desmonte y limpieza general',       description: 'Lentes, carcaza, cajas, recorte de UTP/energía.' },
   configuration: { icon: Settings,   label: 'Configuración DVR/NVR',       name: 'Configuración DVR/NVR',               description: 'Ajustes y puesta a punto del grabador.' },
   remote:        { icon: Globe,      label: 'Acceso remoto',               name: 'Configuración de acceso remoto',      description: 'Visualización desde celular o computador.' },
   app:           { icon: Smartphone, label: 'Configuración de aplicación', name: 'Configuración de aplicación',         description: 'Instalación y vinculación de la app.' },
@@ -23,7 +23,7 @@ export type ServiceKey = keyof typeof SERVICES;
 export const SERVICE_ENTRIES = Object.entries(SERVICES) as [ServiceKey, (typeof SERVICES)[ServiceKey]][];
 
 export const PRICE_CONFIG = [
-  { key: 'pReset',                label: 'Reseteo DVR/NVR',                                   value: 80000 },
+  { key: 'pReset',                label: 'Desmonte y limpieza general',                                   value: 80000 },
   { key: 'pConfiguration',        label: 'Configuración DVR/NVR',                             value: 100000 },
   { key: 'pRemote',               label: 'Acceso remoto',                                     value: 90000 },
   { key: 'pApp',                  label: 'Configuración de aplicación',                       value: 60000 },
@@ -101,6 +101,10 @@ export const SYSTEMS = {
   ip:     { label: 'IP (NVR)',        deviceName: 'NVR', cameraTasks: IP_CAMERA_TASKS,     dvrTasks: NVR_MAINTENANCE_TASKS },
 } as const;
 export type SystemType = keyof typeof SYSTEMS;
+
+/** Servicios que quedan marcados por defecto (al crear o al quitar "full"). */
+export const DEFAULT_CAMERA_TASKS = ['deepCleaningDismount'];
+export const DEFAULT_DVR_TASKS = ['dvrCleaning'];
 
 export const CAMERA_DIFFICULTIES = [
   { key: 'protectiveBase',  label: 'Cámara dentro de base protectora',             price: 15000 },

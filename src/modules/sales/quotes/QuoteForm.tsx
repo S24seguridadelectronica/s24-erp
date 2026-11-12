@@ -11,6 +11,7 @@ import { supabase } from '@/services/supabase/client';
 import { Plus, Trash2, Target, DollarSign, Calendar, MessageSquare, Wrench, FileBox, Calculator, User, Phone, MapPin, Building, FileText, Package, X } from 'lucide-react';
 import { CctvCalculatorModal } from './CctvCalculatorModal';
 import { CalcularServicios } from './calcular-servicios/CalcularServicios';
+import { CctvKitsModal } from './CctvKitsModal';
 import { createWorkOrderFromQuote } from '@/services/api/work-orders';
 import { evidenceUrl } from '@/services/api/storage';
 
@@ -46,6 +47,7 @@ export function QuoteForm({ show, onHide, quote, preselectedOpportunity, onSucce
   const [templates, setTemplates] = useState<any[]>([]);
   const [showCalcModal, setShowCalcModal] = useState(false);
   const [showServiceModal, setShowServiceModal] = useState(false);
+  const [showKitsModal, setShowKitsModal] = useState(false);
   const [selectedCustomerData, setSelectedCustomerData] = useState<any | null>(null);
   const [availableProducts, setAvailableProducts] = useState<any[]>([]);
 
@@ -317,6 +319,7 @@ export function QuoteForm({ show, onHide, quote, preselectedOpportunity, onSucce
               </Form.Select>
               <Button variant="outline-info" size="sm" onClick={() => setShowCalcModal(true)}><Calculator size={16} className="me-1" /> Calcular Instalación</Button>
               <Button variant="outline-success" size="sm" onClick={() => setShowServiceModal(true)}><Wrench size={16} className="me-1" /> Calcular Servicios</Button>
+              <Button variant="outline-primary" size="sm" onClick={() => setShowKitsModal(true)}><Package size={16} className="me-1" /> Kits de Servicios</Button>
             </div>
           </h5>
 
@@ -385,6 +388,8 @@ export function QuoteForm({ show, onHide, quote, preselectedOpportunity, onSucce
       </Form>
       <CctvCalculatorModal show={showCalcModal} onHide={() => setShowCalcModal(false)} onAddItems={handleAddCalculatedItems} />
       <CalcularServicios show={showServiceModal} onHide={() => setShowServiceModal(false)}
+        onAddItems={handleAddCalculatedItems} customerName={selectedCustomerData?.full_name} />
+      <CctvKitsModal show={showKitsModal} onHide={() => setShowKitsModal(false)}
         onAddItems={handleAddCalculatedItems} customerName={selectedCustomerData?.full_name} />
     </Modal>
   );

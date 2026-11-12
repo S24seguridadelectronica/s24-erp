@@ -325,12 +325,11 @@ export function downloadTemplate() {
     ['Juan', 'Pérez', 'Seguridad SAS', '3001234567', 'juan@empresa.com', 'Bucaramanga', 'Santander', 'Calle 123', 'Individual', 'Web', 'Interesado'],
     ['María', 'López', '', '3107654321', 'maria@gmail.com', 'Bogotá', 'Cundinamarca', 'Cra 10', 'Individual', 'Facebook', 'Alarma']
   ];
-  const csvContent = [headers.join(','), ...sampleData.map(r => r.join(','))].join('\n');
-  const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = 'plantilla_clientes_s24.csv';
-  link.click();
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleData]);
+  ws['!cols'] = headers.map(h => ({ wch: Math.max(h.length + 4, 16) }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Clientes');
+  XLSX.writeFile(wb, 'plantilla_clientes_s24.xlsx');
 }
 
 export async function getImportHistory() {
