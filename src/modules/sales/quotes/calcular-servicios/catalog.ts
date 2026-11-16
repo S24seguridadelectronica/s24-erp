@@ -8,7 +8,7 @@ import type { CatalogItem, Option, VideoCause } from './types';
  * ========================================================================= */
 
 export const SERVICES = {
-  maintenance:   { icon: Wrench,     label: 'Mantenimiento preventivo',    name: 'Mantenimiento preventivo',            description: 'Revisión, limpieza y pruebas del sistema.' },
+  maintenance:   { icon: Wrench,     label: 'Mantenimiento preventivo',    name: 'Mantenimiento preventivo',            description: 'Puede iniciar con un kit base para cuatro cámaras: limpieza general y accesorios preseleccionados. Revise las cantidades y ajuste el alcance según el sitio.' },
   video:         { icon: Video,      label: 'Pérdida de video',            name: 'Atención por pérdida de video',       description: 'Una o varias cámaras no muestran imagen.' },
   reset:         { icon: RotateCcw,  label: 'Desmonte y limpieza general', name: 'Desmonte y limpieza general',       description: 'Lentes, carcaza, cajas, recorte de UTP/energía.' },
   configuration: { icon: Settings,   label: 'Configuración DVR/NVR',       name: 'Configuración DVR/NVR',               description: 'Ajustes y puesta a punto del grabador.' },
@@ -70,6 +70,7 @@ export const DVR_MAINTENANCE_TASKS = [
   item('dvrReset',          'Reseteo de fábrica',             'equipo', 1, 40000),
   item('dvrUnlink',         'Desvinculación (App/Nube)',      'equipo', 1, 30000),
   item('dvrInternet',       'Conexión a internet',            'equipo', 1, 40000),
+  item('storageCheck',      'Revisión de estado de disco duro', 'equipo', 1, 20000),
 ];
 
 /* --- IP --- */
@@ -132,6 +133,9 @@ export const MAINTENANCE_MATERIALS = [
   item('junctionBox',   'Caja de paso',             'unidad', 1, 8000),
   item('cr2032Battery', 'Batería interna (CR2032)', 'unidad', 1, 5000),
   item('bncConnector',  'Conector BNC',             'unidad', 1, 3000),
+  item('centralPowerSupply', 'Fuente de poder centralizada 12V 10A/20A', 'unidad', 1, 120000),
+  item('upsBattery',    'Batería de respaldo UPS (12V 7Ah/9Ah)',         'unidad', 1, 85000),
+  item('usbBackup',     'Memoria USB para extracción de evidencia',      'unidad', 1, 35000),
 ];
 
 export const VIDEO_MATERIALS = [

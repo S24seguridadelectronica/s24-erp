@@ -18,7 +18,7 @@ export const money = (value: number) => moneyFormatter.format(Number.isFinite(va
 
 export const nonNegative = (value: unknown) => Math.max(0, Number(value) || 0);
 export const excess = (value: number, base: number) => Math.max(0, value - base);
-export const lineTotal = (m: MaterialState) => m.quantity * m.unitPrice;
+export const lineTotal = (m: MaterialState) => (m?.quantity ?? 0) * (m?.unitPrice ?? 0);
 export const sumSelected = (items: Items) => Object.values(items).reduce((s, m) => (m.selected ? s + lineTotal(m) : s), 0);
 export const sumDifficulties = (d: Difficulties) => Object.values(d).reduce((s, x) => (x.selected ? s + x.price : s), 0);
 export const initItems = (defs: CatalogItem[], selected: string[] = []): Items =>
@@ -158,36 +158,6 @@ export function addMaintenanceLines(i: QuoteInput, add: AddLine) {
      * canales y dificultades siempre se suman: el tope no debe comérselos. */
     const accessExtras = acc.distanceCost + acc.heightCost + acc.channelCost + acc.difficultyCost;
 
-    if (dvr.included) {
-      const parts = [`${dvr.distance || 0} m al tomacorriente`, `${dvr.height || 0} m altura`, `${dvr.channels || 0} canales`];
-      if (acc.extraDistance > 0) parts.push(`+${acc.extraDistance} m dist`);
-      if (acc.extraHeight > 0) parts.push(`+${acc.extraHeight} m alt`);
-      if (acc.extraChannels > 0) parts.push(`+${acc.extraChannels} canales`);
-      if (acc.difficultyCost > 0) parts.push('+ Dificultades físicas');
-      if (dvr.difficultyNote?.trim()) parts.push(`Dificultad: ${dvr.difficultyNote.trim()}`);
-      if (dvr.note?.trim()) parts.push(`Nota: ${dvr.note.trim()}`);
-      if (dvr.photos.length > 0) parts.push(`📸 ${dvr.photos.length} foto(s)`);
-      const dvrPhotos = [...dvr.photos, ...(dvr.difficultyPhoto ? [dvr.difficultyPhoto] : [])];
-      add(`dvr-accessibility-${dvr.id}`, `Accesibilidad Grabador: ${dvrName}`, parts.join(' · '), acc.total, 'service', dvrPhotos, {
-        categoria: 'accesibilidad_grabador', grabador: dvrName, nota: dvr.note?.trim() || null,
-        notaDificultad: dvr.difficultyNote?.trim() || null, fotoDificultad: Boolean(dvr.difficultyPhoto),
-        extraDistance: acc.extraDistance, extraHeight: acc.extraHeight, canalesExtra: acc.extraChannels, dificultades: acc.difficultyCost,
-      });
-    } else if (accessExtras > 0) {
-      const parts = ['Base de accesibilidad no aplicada'];
-      if (acc.extraDistance > 0) parts.push(`+${acc.extraDistance} m dist`);
-      if (acc.extraHeight > 0) parts.push(`+${acc.extraHeight} m alt`);
-      if (acc.extraChannels > 0) parts.push(`+${acc.extraChannels} canales`);
-      if (acc.difficultyCost > 0) parts.push('+ Dificultades físicas');
-      if (dvr.difficultyNote?.trim()) parts.push(`Dificultad: ${dvr.difficultyNote.trim()}`);
-      const extrasPhotos = dvr.difficultyPhoto ? [dvr.difficultyPhoto] : [];
-      add(`dvr-access-extras-${dvr.id}`, `Accesibilidad Grabador (extras): ${dvrName}`, parts.join(' · '), accessExtras, 'service', extrasPhotos, {
-        categoria: 'accesibilidad_grabador_extras', grabador: dvrName,
-        notaDificultad: dvr.difficultyNote?.trim() || null, fotoDificultad: Boolean(dvr.difficultyPhoto),
-        extraDistance: acc.extraDistance, extraHeight: acc.extraHeight, canalesExtra: acc.extraChannels, dificultades: acc.difficultyCost,
-      });
-    }
-
     /* Mantenimiento del grabador: igual que la cámara, el tope de mano de obra
      * baja a medida que se suman servicios (tramos por volumen). */
     const maintDetails: string[] = [];
@@ -195,6 +165,7 @@ export function addMaintenanceLines(i: QuoteInput, add: AddLine) {
     let maintServices = 0;
     for (const def of dvrTasks) {
       const st = dvr.maintenance[def.key];
+      if (!st) continue;
       const amount = lineTotal(st);
       if (!st.selected || amount <= 0) continue;
       maintRaw += amount;
@@ -212,11 +183,86 @@ export function addMaintenanceLines(i: QuoteInput, add: AddLine) {
         : `Tope de mano de obra aplicado: -${money(maintRaw - maintCap)}`);
     }
 
-    if (dvr.note?.trim()) maintDetails.push(`Nota: ${dvr.note.trim()}`);
-    if (maintAmount > 0) add(`dvr-maint-${dvr.id}`, `Mantenimiento Grabador: ${dvrName}`, maintDetails.join(' + '), maintAmount, 'service', dvr.photos, {
-      categoria: 'mantenimiento_grabador', grabador: dvrName, fotos: dvr.photos.length, nota: dvr.note?.trim() || null,
-      servicios: maintServices, bruto: maintRaw, tope: maintCap, topeAplicado: maintRaw - maintAmount, topeIgnorado: noCap,
-    });
+    /* Consolidación de accesibilidad y mantenimiento en UN SOLO ÍTEM para el grabador */
+    const dvrAccessAmount = dvr.included ? acc.total : accessExtras;
+    const totalDvr = maintAmount + dvrAccessAmount;
+
+    if (totalDvr > 0) {
+      const dvrParts: string[] = [];
+      const dvrDist = nonNegative(dvr.distance);
+      const dvrH = nonNegative(dvr.height);
+      const dvrCh = nonNegative(dvr.channels);
+
+      // 1. Distancia del Grabador al tomacorriente (Base 0–10 m incluida)
+      if (dvrDist > BASE.distance) {
+        dvrParts.push(`Distancia al tomacorriente: ${dvrDist} m total (+${acc.extraDistance} m excedentes sobre base 10 m: +${money(acc.distanceCost)})`);
+      } else if (dvr.included || dvrDist > 0) {
+        dvrParts.push(`Distancia al tomacorriente: ${dvrDist} m (base 0–10 m incluida)`);
+      }
+
+      // 2. Altura del Grabador (Base 0–3 m incluida)
+      if (dvrH > BASE.height) {
+        dvrParts.push(`Altura grabador: ${dvrH} m total (+${acc.extraHeight} m excedentes sobre base 3 m: +${money(acc.heightCost)})`);
+      } else if (dvr.included || dvrH > 0) {
+        dvrParts.push(`Altura grabador: ${dvrH} m (base 0–3 m incluida)`);
+      }
+
+      // 3. Canales ocupados (Base hasta 4 canales incluida)
+      if (acc.extraChannels > 0) {
+        dvrParts.push(`Canales: ${dvrCh} (+${acc.extraChannels} canales adicionales: +${money(acc.channelCost)})`);
+      } else if (dvr.included && dvrCh > 0) {
+        dvrParts.push(`Canales: ${dvrCh} (base hasta 4 canales incluida)`);
+      }
+
+      // 4. Cobro base de accesibilidad
+      if (dvr.included) {
+        dvrParts.push(`Base accesibilidad grabador incluida: ${money(acc.base)}`);
+      }
+
+      // 5. Actividades de mantenimiento del grabador
+      if (maintDetails.length > 0) {
+        dvrParts.push(maintDetails.join(' + '));
+      }
+
+      // 6. Dificultades físicas del grabador
+      if (acc.difficultyCost > 0) {
+        dvrParts.push(`Dificultades físicas de acceso: +${money(acc.difficultyCost)}`);
+      }
+      if (dvr.difficultyNote?.trim()) {
+        dvrParts.push(`Dificultad: ${dvr.difficultyNote.trim()}`);
+      }
+
+      // 7. Notas técnicas y fotos
+      if (dvr.note?.trim()) dvrParts.push(`Nota: ${dvr.note.trim()}`);
+      if (dvr.photos.length > 0) dvrParts.push(`📸 ${dvr.photos.length} foto(s)`);
+
+      const dvrPhotos = [...dvr.photos, ...(dvr.difficultyPhoto ? [dvr.difficultyPhoto] : [])];
+
+      add(`dvr-service-${dvr.id}`, `Servicio Grabador: ${dvrName}`, dvrParts.join(' · '), totalDvr, 'service', dvrPhotos, {
+        categoria: 'servicio_grabador',
+        grabador: dvrName,
+        distancia: dvrDist,
+        altura: dvrH,
+        canales: dvrCh,
+        extraDistance: acc.extraDistance,
+        extraHeight: acc.extraHeight,
+        extraChannels: acc.extraChannels,
+        distanceCost: acc.distanceCost,
+        heightCost: acc.heightCost,
+        channelCost: acc.channelCost,
+        dificultades: acc.difficultyCost,
+        baseAccesibilidad: dvr.included ? acc.base : 0,
+        mantenimientoBruto: maintRaw,
+        mantenimientoCobrado: maintAmount,
+        topeMantenimiento: maintCap,
+        topeAplicado: maintRaw - maintAmount,
+        topeIgnorado: noCap,
+        nota: dvr.note?.trim() || null,
+        notaDificultad: dvr.difficultyNote?.trim() || null,
+        fotoDificultad: Boolean(dvr.difficultyPhoto),
+        fotos: dvr.photos.length,
+      });
+    }
 
     for (const cam of dvr.cameras) {
       if (!cam.active) continue;
@@ -237,22 +283,35 @@ export function addMaintenanceLines(i: QuoteInput, add: AddLine) {
       for (const def of cameraTasks) {
         if (def.key === 'cableChange') continue;
         const task = cam.tasks[def.key];
-        if (!task.selected) continue;
+        if (!task || !task.selected) continue;
         laborTotal += lineTotal(task);
         laborDetails.push(`${task.quantity} ${def.unit} - ${def.label}`);
       }
       const laborCharged = noCap ? laborTotal : Math.min(laborTotal, laborCap);
 
       /* Una sola línea por cámara: mano de obra (con tope) + accesibilidad.
-       * Distancia y altura quedan descritas dentro del concepto de la cámara y
-       * sus metros extra se suman aunque la mano de obra esté topada. */
+       * Distancia y altura quedan descritas dentro del concepto de la misma cámara y
+       * sus metros extra se suman dentro del mismo ítem. */
       const totalCamara = laborCharged + camAcc.total;
 
       if (totalCamara > 0) {
-        const parts: string[] = [
-          `Distancia: ${nonNegative(cam.distance)} m (base 0–10)`,
-          `Altura: ${nonNegative(cam.height)} m (base 0–3)`,
-        ];
+        const parts: string[] = [];
+        const camDist = nonNegative(cam.distance);
+        const camH = nonNegative(cam.height);
+
+        // Distancia: Base 0-10 m al grabador o toma de energía
+        if (camDist > BASE.distance) {
+          parts.push(`Distancia total: ${camDist} m al grabador/toma (+${camAcc.extraDistance} m excedentes sobre base 10 m: +${money(camAcc.distanceCost)})`);
+        } else {
+          parts.push(`Distancia: ${camDist} m al grabador/toma (base 0–10 m incluida)`);
+        }
+
+        // Altura: Base 0-3 m
+        if (camH > BASE.height) {
+          parts.push(`Altura total: ${camH} m (+${camAcc.extraHeight} m excedentes sobre base 3 m: +${money(camAcc.heightCost)})`);
+        } else {
+          parts.push(`Altura: ${camH} m (base 0–3 m incluida)`);
+        }
 
         if (laborDetails.length > 0) parts.push(laborDetails.join(' + '));
         if (laborTotal > laborCap) {
@@ -260,13 +319,7 @@ export function addMaintenanceLines(i: QuoteInput, add: AddLine) {
             ? `Tope no aplicado (autorizado): ${money(laborTotal - laborCap)} adicionales`
             : `Tope de mano de obra aplicado: -${money(laborTotal - laborCap)}`);
         }
-        if (camAcc.extraDistance > 0) {
-          parts.push(`+${camAcc.extraDistance} m dist × ${money(camAcc.distanceRate)}/m`);
-        }
-        if (camAcc.extraHeight > 0) {
-          parts.push(`+${camAcc.extraHeight} m alt × ${money(prices.pAccessHeight)}/m`);
-        }
-        if (camAcc.difficultyCost > 0) parts.push(`+ Dificultades ${money(camAcc.difficultyCost)}`);
+        if (camAcc.difficultyCost > 0) parts.push(`+ Dificultades físicas ${money(camAcc.difficultyCost)}`);
         if (cam.note?.trim()) parts.push(`Nota: ${cam.note.trim()}`);
         if (cam.difficultyNote?.trim()) parts.push(`Dificultad: ${cam.difficultyNote.trim()}`);
         if (cam.photos.length > 0) parts.push(`📸 ${cam.photos.length} foto(s)`);
@@ -275,9 +328,10 @@ export function addMaintenanceLines(i: QuoteInput, add: AddLine) {
 
         add(`cam-total-${cam.id}`, `Servicio Cámara: ${camName} (${dvrName})`, parts.join(' · '), totalCamara, 'service', camPhotos, {
           categoria: 'servicio_camara', camara: camName,
-          distancia: nonNegative(cam.distance), altura: nonNegative(cam.height),
+          distancia: camDist, altura: camH,
           distanciaRate: camAcc.distanceRate, alturaRate: prices.pAccessHeight,
           extraDistance: camAcc.extraDistance, extraHeight: camAcc.extraHeight,
+          distanceCost: camAcc.distanceCost, heightCost: camAcc.heightCost,
           dificultades: camAcc.difficultyCost,
           bruto: laborTotal, tope: laborCap, topeAplicado: laborTotal - laborCharged, topeIgnorado: noCap,
           nota: cam.note?.trim() || null, notaDificultad: cam.difficultyNote?.trim() || null,
@@ -300,8 +354,9 @@ export function addMaintenanceLines(i: QuoteInput, add: AddLine) {
 
   MAINTENANCE_MATERIALS.forEach(def => {
     const st = i.maintenanceMaterials[def.key];
+    if (!st?.selected) return;
     const amount = lineTotal(st);
-    if (st.selected && amount > 0) add(`maint-material-${def.key}`, def.label, `${st.quantity} ${def.unit} × ${money(st.unitPrice)}`, amount, 'product', [], { categoria: 'material' });
+    if (amount > 0) add(`maint-material-${def.key}`, def.label, `${st.quantity} ${def.unit} × ${money(st.unitPrice)}`, amount, 'product', [], { categoria: 'material' });
   });
 }
 

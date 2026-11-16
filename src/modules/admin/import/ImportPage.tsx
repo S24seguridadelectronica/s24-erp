@@ -1,6 +1,7 @@
 ﻿import { useState } from 'react';
+import { PdfCatalogImport } from './PdfCatalogImport';
 import { Card, Button, Alert, Row, Col, Badge, Form, Table, ProgressBar } from 'react-bootstrap';
-import { Upload, Download, FileText, CheckCircle, AlertTriangle, XCircle, Loader, ArrowRight, ArrowLeft, Users } from 'lucide-react';
+import { Upload, Download, FileText, FileDown, CheckCircle, AlertTriangle, XCircle, Loader, ArrowRight, ArrowLeft, Users } from 'lucide-react';
 import {
   parseFile, detectColumnMapping, getUnrecognizedColumns, validateRecord, checkDuplicates,
   executeImport, createImportBatch, finalizeBatch, downloadTemplate, getBatchResults
@@ -142,15 +143,48 @@ export function ImportPage() {
     setProgress(0); setConfig({ duplicateStrategy: 'skip', autoAssign: true, distributionStrategy: 'equal' });
   };
 
+  const [mode, setMode] = useState<'excel' | 'pdf'>('excel');
+
   return (
     <div className="fade-in">
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div>
-          <h2 className="mb-1"><Upload size={28} className="me-2" />Importación Masiva de Clientes</h2>
-          <p className="text-muted mb-0">Carga bases de datos de clientes potenciales desde CSV, JSON o Excel</p>
+          <h2 className="mb-1"><Upload size={28} className="me-2" />Importación Masiva de Productos</h2>
+          <p className="text-muted mb-0">Importación mediante Excel/CSV (clientes) o catálogo inteligente desde PDF (productos)</p>
         </div>
-        <Button variant="outline-primary" onClick={downloadTemplate}><Download size={18} className="me-2" />Descargar Plantilla</Button>
+        {mode === 'excel' && (
+          <Button variant="outline-primary" onClick={downloadTemplate}><Download size={18} className="me-2" />Descargar Plantilla</Button>
+        )}
       </div>
+
+      {/* Selector de modalidad: Excel (existente) / PDF (nueva) */}
+      <nav className="mb-4">
+        <ul className="nav nav-pills">
+          <li className="nav-item">
+            <button
+              className={`nav-link ${mode === 'excel' ? 'active' : ''}`}
+              onClick={() => setMode('excel')}
+              type="button"
+            >
+              <FileText size={16} className="me-2" />Importación Excel / CSV
+            </button>
+          </li>
+          <li className="nav-item">
+            <button
+              className={`nav-link ${mode === 'pdf' ? 'active' : ''}`}
+              onClick={() => setMode('pdf')}
+              type="button"
+            >
+              <FileDown size={16} className="me-2" />Importar Catálogo desde PDF
+            </button>
+          </li>
+        </ul>
+      </nav>
+
+      {mode === 'pdf' ? (
+        <PdfCatalogImport />
+      ) : (
+      <>
 
       {error && <Alert variant="danger" onClose={() => setError(null)} dismissible>{error}</Alert>}
 
@@ -193,7 +227,7 @@ export function ImportPage() {
           {summary.unrecognizedColumns.length > 0 && <Alert variant="warning"><AlertTriangle size={18} className="me-2" /><strong>Columnas no reconocidas:</strong> {summary.unrecognizedColumns.join(', ')}</Alert>}
           <Card className="border-0 shadow-sm mb-3">
             <Card.Header className="bg-white"><h5 className="mb-0">Mapeo de Columnas Detectado</h5></Card.Header>
-            <Card.Body><Table size="sm" className="mb-0"><tbody>{Object.entries(summary.mappedColumns).map(([standard, original]) => (<tr key={standard}><td className="fw-bold">{standard}</td><td><Badge bg="success">{original}</Badge></td></tr>))}</tbody></Table></Card.Body>
+            <Card.Body><Table size="sm" className="mb-0"><tbody>{Object.entries(summary.mappedColumns).map(([standard, original]) => (<tr key={standard}><td className="fw-bold">{standard}</td><td><Badge bg="success">{String(original)}</Badge></td></tr>))}</tbody></Table></Card.Body>
           </Card>
           <Card className="border-0 shadow-sm mb-4">
             <Card.Header className="bg-white"><h5 className="mb-0">Vista Previa (primeros 10 registros)</h5></Card.Header>
@@ -313,6 +347,8 @@ export function ImportPage() {
             </div>
           </Card.Body>
         </Card>
+      )}
+      </>
       )}
     </div>
   );

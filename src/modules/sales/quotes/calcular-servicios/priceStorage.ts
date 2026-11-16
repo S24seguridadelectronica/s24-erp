@@ -20,7 +20,8 @@ export interface StoredPriceData {
   applyTax: boolean;
 }
 
-const STORAGE_KEY = 's24.quoteCalculator.prices.v2';
+export const STORAGE_KEY = 's24.quoteCalculator.prices.v2';
+export const PRICE_DATA_UPDATED_EVENT = 's24.quoteCalculator.pricesUpdated';
 const REMOTE_KEY = 'quote_calculator_prices';
 const DEFAULT_TAX_RATE = 19;
 const DEFAULT_MAX_DISCOUNT = 20;
@@ -34,7 +35,7 @@ const DEFAULT_DATA: StoredPriceData = {
 
 const normalizePrices = (raw: unknown): Prices =>
   Object.fromEntries(
-    PRICE_CONFIG.map(({ key, value }) => [key, nonNegative((raw as Record<string, unknown> | undefined)?.[key] ?? value)]),
+    PRICE_CONFIG.map(({ key, value }) => [key, nonNegative((raw as Record<string, unknown>)?.[key] ?? value)])
   ) as Prices;
 
 const normalizeTaxRate = (raw: unknown): number => {
@@ -125,12 +126,17 @@ export async function loadRemotePriceData(): Promise<StoredPriceData | null> {
 /** Sincroniza la configuración hacia la empresa. Devuelve si se guardó. */
 export async function saveRemotePriceData(data: StoredPriceData): Promise<boolean> {
   try {
+    // Obtener sesión actual; si no existe, omitir sincronización remota.
+    const { data: sessionData } = await supabase.auth.getSession();
+    const session = sessionData.session;
+    if (!session) {
+      console.warn('[precios] No hay sesión autenticada; se omite sincronización remota.');
+      return false;
+    }
+
     const { error } = await siteSettings
       .from('site_settings')
-      .upsert(
-        { setting_key: REMOTE_KEY, setting_value: data, updated_at: new Date().toISOString() },
-        { onConflict: 'setting_key' },
-      );
+      .upsert({ setting_key: REMOTE_KEY, setting_value: data, updated_at: new Date().toISOString() }, { onConflict: 'setting_key' });
 
     if (error) {
       console.warn('[precios] No se pudo sincronizar con site_settings:', error.message);

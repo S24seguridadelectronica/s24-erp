@@ -1,0 +1,290 @@
+/* =========================================================================
+ * Calculadora de servicios CCTV — estilo S24 ERP
+ * Moderno, limpio y profesional: superficies planas, bordes suaves,
+ * jerarquía tipográfica clara y acentos en el azul institucional.
+ * ========================================================================= */
+
+:root {
+  --calc-surface: #ffffff;
+  --calc-surface-soft: #f8fafc;
+  --calc-border: #e8edf2;
+  --calc-muted: #64748b;
+  --calc-primary: #0a2540;
+  --calc-radius: 8px;
+  --calc-shadow: 0 1px 2px rgba(10, 37, 64, 0.04), 0 4px 16px rgba(10, 37, 64, 0.06);
+}
+
+/* ---- Modal contenedor ---- */
+
+.s24-service-calculator-modal {
+  --bs-modal-width: 1440px;
+  max-width: min(1440px, calc(100vw - 2rem));
+}
+
+.s24-service-calculator-modal .modal-content {
+  border: none;
+  border-radius: var(--calc-radius);
+  box-shadow: 0 24px 64px rgba(10, 37, 64, 0.22);
+  overflow: hidden;
+}
+
+.s24-service-calculator-modal .modal-header {
+  background: linear-gradient(135deg, var(--calc-primary) 0%, #10325c 60%, #144779 100%);
+  color: #fff;
+  padding: 1rem 1.5rem;
+}
+
+.s24-service-calculator-modal .modal-header .btn-close {
+  filter: invert(1) brightness(1.6);
+  opacity: 0.8;
+}
+
+.s24-service-calculator-modal .modal-header .btn-close:hover { opacity: 1; }
+
+.s24-service-calculator-modal .modal-title { font-size: 1.05rem; letter-spacing: -0.01em; }
+
+.calc-header-icon {
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffc107;
+  flex-shrink: 0;
+}
+
+.calc-header-link {
+  color: rgba(255, 255, 255, 0.85) !important;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 0.35rem 0.75rem;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.calc-header-link:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff !important;
+}
+
+.calc-header-link.btn:active { background: rgba(255, 255, 255, 0.2); }
+
+.calc-header-link svg { opacity: 0.9; }
+
+/* ---- Cuerpo del modal ---- */
+
+.s24-service-calculator-modal .modal-body {
+  background: var(--calc-surface-soft);
+  padding: 1.25rem 1.5rem 1.75rem;
+}
+
+/* Aviso introductorio */
+.calc-intro {
+  border: none;
+  border-left: 3px solid var(--calc-primary);
+  border-radius: 10px;
+  background: var(--calc-surface);
+  box-shadow: var(--calc-shadow);
+  color: var(--calc-muted);
+}
+
+/* ---- Tarjetas de sección ---- */
+
+.calc-card {
+  border: 1px solid var(--calc-border);
+  border-radius: var(--calc-radius);
+  box-shadow: var(--calc-shadow);
+  background: var(--calc-surface);
+}
+
+.calc-card > .card-header {
+  background: var(--calc-surface);
+  border-bottom: 1px solid var(--calc-border);
+  padding: 0.9rem 1.15rem;
+}
+
+.calc-card > .card-body { padding: 1.15rem; }
+
+/* Paso numerado */
+.calc-step-badge {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--calc-primary);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.calc-section-badge {
+  background: #eef2f7;
+  color: var(--calc-muted);
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.72rem;
+}
+
+/* Botones de sistema (Análogo / IP) */
+.calc-system-toggle {
+  border-radius: 10px;
+  padding: 0.5rem 1rem;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.calc-system-toggle:not(.active) {
+  background: #fff;
+  border-color: var(--calc-border);
+  color: var(--calc-muted);
+}
+
+.calc-system-toggle:not(.active):hover {
+  border-color: var(--calc-primary);
+  color: var(--calc-primary);
+}
+
+/* Aviso del tope de mano de obra */
+.calc-cap-alert {
+  border: 1px solid rgba(13, 110, 253, 0.25);
+  background: rgba(13, 110, 253, 0.06);
+  border-radius: 12px;
+  color: inherit;
+}
+
+/* Panel de precios (header de configuración) */
+.calc-config-header {
+  background: var(--calc-surface);
+  border-bottom: 1px solid var(--calc-border);
+  border-top: 1px solid var(--calc-border);
+}
+
+/* ---- Panel de resumen ---- */
+
+.calc-summary-result {
+  border: none;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+}
+
+.calc-summary-line {
+  border: 1px solid var(--calc-border);
+  border-radius: 10px;
+  background: var(--calc-surface);
+  padding: 0.5rem 0.75rem;
+}
+
+.calc-total-box {
+  border: 1px solid var(--calc-border);
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f8fafc 0%, #eef3f9 100%);
+  padding: 0.9rem 1rem;
+}
+
+.calc-total-amount {
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--calc-primary);
+  line-height: 1.1;
+}
+
+.calc-script-box {
+  border: 1px dashed #cdd8e4;
+  border-radius: 12px;
+  background: var(--calc-surface-soft);
+  padding: 0.85rem 1rem;
+}
+
+.calc-cta {
+  border-radius: 10px;
+  padding: 0.65rem 1rem;
+  font-weight: 600;
+}
+
+.calc-footnote {
+  color: var(--calc-muted);
+  font-size: 0.75rem;
+}
+
+/* Sticky footer de acciones del resumen */
+.calc-summary-footer {
+  position: sticky;
+  bottom: 0;
+  background: linear-gradient(to top, var(--calc-surface) 82%, rgba(255, 255, 255, 0));
+  padding: 0.75rem 0 0;
+  margin-top: 0.5rem;
+}
+
+/* ---- Formularios ---- */
+
+.s24-service-calculator-modal .form-label {
+  color: #334155;
+  letter-spacing: 0.01em;
+}
+
+.s24-service-calculator-modal .form-control,
+.s24-service-calculator-modal .form-select {
+  border-color: var(--calc-border);
+  border-radius: 8px;
+}
+
+.s24-service-calculator-modal .form-control:focus,
+.s24-service-calculator-modal .form-select:focus {
+  border-color: #144779;
+  box-shadow: 0 0 0 3px rgba(10, 37, 64, 0.08);
+}
+
+.s24-service-calculator-modal .input-group-text {
+  background: #f1f5f9;
+  border-color: var(--calc-border);
+  color: var(--calc-muted);
+  font-size: 0.85rem;
+}
+
+/* Scrollbar discreto dentro del modal */
+.s24-service-calculator-modal .modal-body::-webkit-scrollbar { width: 10px; }
+.s24-service-calculator-modal .modal-body::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 8px;
+  border: 3px solid var(--calc-surface-soft);
+}
+
+@media (max-width: 767.98px) {
+  .s24-service-calculator-modal {
+    max-width: calc(100vw - 1rem);
+    margin: 0.5rem auto;
+  }
+
+  .s24-service-calculator-modal .modal-header {
+    padding: 0.85rem 1rem;
+  }
+
+  .s24-service-calculator-modal .modal-body {
+    padding: 1rem;
+  }
+
+  .calc-card > .card-body {
+    padding: 0.9rem;
+  }
+
+  .calc-summary-footer {
+    position: static;
+    background: none;
+  }
+
+  .calc-total-box {
+    align-items: flex-start !important;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .calc-total-amount {
+    text-align: left !important;
+  }
+}

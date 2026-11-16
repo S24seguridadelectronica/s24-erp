@@ -40,7 +40,28 @@ export function readStoredKits(): MaintenanceKit[] {
     if (!Array.isArray(parsed)) return [...INITIAL_KITS];
 
     const valid = parsed.filter(isValidKit);
-    return valid.length > 0 ? valid : [...INITIAL_KITS];
+    if (valid.length === 0) return [...INITIAL_KITS];
+
+    // Asegura que nuevos kits built-in se incorporen automáticamente
+    // y hereden metadatos comerciales actualizados (group, clientProfile, etc.)
+    const builtInMap = new Map(INITIAL_KITS.map(k => [k.id, k]));
+    const merged = valid.map(k => {
+      const def = builtInMap.get(k.id);
+      if (def) {
+        return {
+          ...def,
+          ...k,
+          group: k.group || def.group,
+          clientProfile: k.clientProfile || def.clientProfile,
+          suggestedChannels: k.suggestedChannels || def.suggestedChannels,
+          suggestedDuct: k.suggestedDuct || def.suggestedDuct,
+        };
+      }
+      return k;
+    });
+    const existingIds = new Set(merged.map(k => k.id));
+    const missingBuiltIns = INITIAL_KITS.filter(k => !existingIds.has(k.id));
+    return missingBuiltIns.length > 0 ? [...merged, ...missingBuiltIns] : merged;
   } catch {
     return [...INITIAL_KITS];
   }

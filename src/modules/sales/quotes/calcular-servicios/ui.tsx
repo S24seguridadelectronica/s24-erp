@@ -11,7 +11,7 @@ import { compressImage } from '@/utils/image';
 
 export const Step = ({ n, children }: { n: number; children: ReactNode }) => (
   <div className="d-flex align-items-center gap-2">
-    <span className="rounded-circle bg-primary text-white px-2 py-1 small fw-bold">{n}</span>
+    <span className="calc-step-badge">{n}</span>
     {children}
   </div>
 );
@@ -107,22 +107,22 @@ export const ItemRow = memo(function ItemRow({ def, state, patch, priceWidth, to
       <Form.Check
         type="checkbox"
         className="mb-2"
-        checked={state.selected}
+        checked={state?.selected ?? false}
         disabled={disabled}
         onChange={e => patch(def.key, { selected: e.target.checked })}
         label={<span className="small fw-semibold">{def.label}</span>}
       />
       <div className="d-flex flex-wrap align-items-center gap-2">
         <Form.Control
-          type="number" min={1} size="sm" value={state.quantity} disabled={!state.selected || disabled}
+          type="number" min={1} size="sm" value={state?.quantity ?? 1} disabled={!state?.selected || disabled}
           onChange={e => patch(def.key, { quantity: Math.max(1, nonNegative(e.target.value)) })}
           style={{ maxWidth: 80 }}
           aria-label={`Cantidad de ${def.label}`}
         />
         <span className="small text-muted">{def.unit}</span>
         <PriceInput
-          value={state.unitPrice}
-          disabled={!state.selected || disabled}
+          value={state?.unitPrice ?? 0}
+          disabled={!state?.selected || disabled}
           maxWidth={priceWidth}
           onChange={v => patch(def.key, { unitPrice: nonNegative(v) })}
         />
@@ -232,7 +232,7 @@ export const DifficultyRow = memo(function DifficultyRow({ idPrefix, def, state,
   return (
     <Col sm={12}>
       <Form.Check type="switch" id={`${idPrefix}-${def.key}`} label={<span className="small">{def.label}</span>}
-        checked={state.selected} onChange={e => onPatch(def.key, { selected: e.target.checked })} />
+        checked={state?.selected ?? false} onChange={e => onPatch(def.key, { selected: e.target.checked })} />
       <PriceInput value={state.price} maxWidth={120} onChange={v => onPatch(def.key, { price: nonNegative(v) })} />
     </Col>
   );

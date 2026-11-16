@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Badge, Button, Card, Col, Form, Modal, Row } from 'react-bootstrap';
+import { Alert, Badge, Button, Card, Col, Form, InputGroup, Modal, Row } from 'react-bootstrap';
 import {
-  Bookmark, Calculator, ClipboardList, Clock3, Copy, Eye, HardDrive, Info, MapPin, Package, PlusCircle, RotateCcw,
+  Bookmark, Calculator, ClipboardList, Clock3, Copy, Eye, HardDrive, Info, MapPin, Minus, Package, Plus, PlusCircle, RotateCcw,
   Send, Settings, Zap,
 } from 'lucide-react';
 import {
@@ -16,17 +16,27 @@ import type {
 import {
   buildQuote, countCamerasWithWork, createCamera, createDvr, initItems, money, nonNegative, remapItems, sumSelected, uid,
 } from './calc';
-import { loadRemotePriceData, readStoredPrices, saveRemotePriceData, writeStoredPrices, type StoredPriceData } from './priceStorage';
+import {
+  loadRemotePriceData, readStoredPrices, saveRemotePriceData, writeStoredPrices, type StoredPriceData,
+} from './priceStorage';
 import { clearDraft, readDraft, writeDraft, type DraftInput } from './draft';
 import { addSaved, readSaved, removeSaved, type SavedCalculation } from './savedStore';
 import { SavedCalculationsModal } from './saved';
 import { CopyCameraModal } from './copyCamera';
 import { ItemRows, NumField, Panel, PanelHeader, Row2, SelectField, Step } from './ui';
 import { DvrCard } from './cards';
-import type { Actions } from './cards';
 import { LineItemRow, PriceSettings, ServiceGrid } from './panel';
 import { MAX_PHOTOS_PER_QUOTE, serializePhotos } from '@/utils/quotePhotos';
 import { buildQuotePdf } from '@/services/api/quotePdf';
+import { useCctvGroups } from './useCctvGroups';
+import { KitsSelectorPanel } from '../kits/KitsSelectorPanel';
+import {
+  loadRemoteKits, readStoredKits, saveRemoteKits, writeStoredKits,
+} from '../kits/kitsStore';
+import {
+  applyKitMaterials, applyKitToGroups, getCameraTaskLabel, getDvrTaskLabel, type ApplyKitOptions, type MaintenanceKit,
+} from '../kits/types';
+import './CalcularServicios.css';
 
 /* =========================================================================
  * Componente principal
@@ -35,6 +45,16 @@ import { buildQuotePdf } from '@/services/api/quotePdf';
 /** Marca o desmarca todas las tareas de un catálogo. */
 const setAllTasks = (items: Items, selected: boolean): Items =>
   Object.fromEntries(Object.entries(items).map(([key, task]) => [key, { ...task, selected }]));
+
+const DEFAULT_MAINTENANCE_KIT_CAMERA_COUNT = 4;
+
+const createDefaultMaintenanceKitMaterials = () =>
+  initItems(MAINTENANCE_MATERIALS, MAINTENANCE_MATERIALS.map(material => material.key));
+
+const createDefaultMaintenanceKitDvrGroups = (): DvrGroup[] => {
+  const dvr = createDvr('DVR / NVR 1', 'analog', false, DEFAULT_MAINTENANCE_KIT_CAMERA_COUNT);
+  return [{ ...dvr, maintenance: initItems(SYSTEMS.analog.dvrTasks) }];
+};
 
 export function CalcularServicios({ show, onHide, onAddItems, customerName }: CalcularServiciosProps) {
   /* Borrador previo (si la app se cerró a mitad del cálculo). */
@@ -47,18 +67,46 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
   const [system, setSystem] = useState<SystemType>(initialDraft?.system ?? 'analog');
   const [data, setData] = useState<ServiceForm>(draftData);
 
+  const [kits, setKits] = useState<MaintenanceKit[]>(() => readStoredKits());
+  const [activeKitId, setActiveKitId] = useState<string | null>(null);
+
+  const activeKit = useMemo(() => kits.find(k => k.id === activeKitId) || null, [kits, activeKitId]);
+
+  const getActiveCameraTasks = useCallback(() => {
+    if (!activeKit) return undefined;
+    if (activeKit.target === 'camera' || activeKit.target === 'both') {
+      return activeKit.cameraTasks.length > 0 ? activeKit.cameraTasks : undefined;
+    }
+    return undefined;
+  }, [activeKit]);
+
+  const {
+    dvrGroups,
+    setDvrGroups,
+    actions,
+    addDvrGroup,
+    copyTarget,
+    setCopySource,
+  } = useCctvGroups({
+    initialGroups: initialDraft?.dvrGroups ?? createDefaultMaintenanceKitDvrGroups(),
+    system,
+    getActiveCameraTasks,
+  });
+
   const [videoCause, setVideoCause] = useState<VideoCause>(initialDraft?.videoCause ?? 'unknown');
   const [videoMaterials, setVideoMaterials] = useState<Items>(() => initialDraft?.videoMaterials ?? initItems(VIDEO_MATERIALS));
-  const [maintenanceMaterials, setMaintenanceMaterials] = useState<Items>(() => initialDraft?.maintenanceMaterials ?? initItems(MAINTENANCE_MATERIALS));
-  const [dvrGroups, setDvrGroups] = useState<DvrGroup[]>(() => initialDraft?.dvrGroups ?? [createDvr('DVR / NVR 1', 'analog', false, 4)]);
+  const [maintenanceMaterials, setMaintenanceMaterials] = useState<Items>(() => {
+    // Merge stored draft with full defaults to guarantee all keys exist.
+    const defaults = createDefaultMaintenanceKitMaterials();
+    const stored = initialDraft?.maintenanceMaterials;
+    return stored ? remapItems(stored, MAINTENANCE_MATERIALS) : defaults;
+  });
 
   const [ignoreCap, setIgnoreCap] = useState(Boolean(initialDraft?.ignoreCap));
   const [capReason, setCapReason] = useState(initialDraft?.capReason ?? '');
   const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'synced' | 'local'>('idle');
   const [savedList, setSavedList] = useState<SavedCalculation[]>(() => readSaved());
   const [showSaved, setShowSaved] = useState(false);
-  /** Cámara de origen mientras se eligen los destinos para copiar su configuración. */
-  const [copySource, setCopySource] = useState<{ dvrId: string; camId: string } | null>(null);
 
   /** Claves de material marcadas automáticamente por la causa de video. */
   const autoVideoMaterials = useRef<string[]>([]);
@@ -88,8 +136,35 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
       setPriceData(remote);
       setSyncStatus('synced');
     });
+    loadRemoteKits().then(remote => {
+      if (cancelled || !remote || remote.length === 0) return;
+      setKits(remote);
+    });
     return () => { cancelled = true; };
   }, []);
+
+  const handleSaveKits = useCallback((nextKits: MaintenanceKit[]) => {
+    setKits(nextKits);
+    writeStoredKits(nextKits);
+    saveRemoteKits(nextKits);
+  }, []);
+
+  const handleApplyKitConfirm = useCallback((kit: MaintenanceKit, options: ApplyKitOptions) => {
+    const unsupportedCameraTasks = kit.cameraTasks.filter(key => !SYSTEMS[system].cameraTasks.some(task => task.key === key));
+    const unsupportedDvrTasks = kit.dvrTasks.filter(key => !SYSTEMS[system].dvrTasks.some(task => task.key === key));
+    if (unsupportedCameraTasks.length || unsupportedDvrTasks.length) {
+      const skipped = [
+        ...unsupportedCameraTasks.map(key => getCameraTaskLabel(key, system)),
+        ...unsupportedDvrTasks.map(key => getDvrTaskLabel(key, system)),
+      ];
+      window.alert(`El sistema ${SYSTEMS[system].label} no admite estas tareas del kit; se omitirán:\n${skipped.join('\n')}`);
+    }
+    setDvrGroups(prev => applyKitToGroups(prev, kit, options));
+    if (options.materials && Object.keys(options.materials).length > 0) {
+      setMaintenanceMaterials(prev => applyKitMaterials(prev, options.materials!));
+    }
+    setActiveKitId(kit.id);
+  }, [system, setDvrGroups]);
 
   /** Datos del cálculo actual, para borrador, plantillas e historial. */
   const draftPayload = useCallback((): DraftInput => ({
@@ -113,8 +188,8 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
     setData({ ...INITIAL_FORM });
     setVideoCause('unknown');
     setVideoMaterials(initItems(VIDEO_MATERIALS));
-    setMaintenanceMaterials(initItems(MAINTENANCE_MATERIALS));
-    setDvrGroups([createDvr('DVR / NVR 1', 'analog', false, 4)]);
+    setMaintenanceMaterials(createDefaultMaintenanceKitMaterials());
+    setDvrGroups(createDefaultMaintenanceKitDvrGroups());
     setIgnoreCap(false);
     setCapReason('');
     setCopySource(null);
@@ -233,96 +308,22 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
     [handleVideoCauseChange],
   );
 
-  const actions = useMemo<Actions>(() => {
-    const mapDvr = (id: string, fn: (d: DvrGroup) => DvrGroup) =>
-      setDvrGroups(prev => prev.map(d => (d.id === id ? fn(d) : d)));
-    const mapCamera = (dvrId: string, camId: string, fn: (c: CameraGroup) => CameraGroup) =>
-      mapDvr(dvrId, d => ({ ...d, cameras: d.cameras.map(c => (c.id === camId ? fn(c) : c)) }));
+  const primaryDvrCameraCount = dvrGroups[0]?.cameras.length ?? 0;
 
-    return {
-      updateDvr: (id, patch) => mapDvr(id, d => ({ ...d, ...patch })),
-      removeDvr: id => setDvrGroups(prev => prev.filter(d => d.id !== id)),
-      patchDvrDifficulty: (id, key, patch) =>
-        mapDvr(id, d => ({ ...d, difficulties: { ...d.difficulties, [key]: { ...d.difficulties[key], ...patch } } })),
-      patchDvrTask: (id, key, patch) =>
-        mapDvr(id, d => ({ ...d, maintenance: { ...d.maintenance, [key]: { ...d.maintenance[key], ...patch } } })),
-      addCamera: (dvrId, sys) =>
-        mapDvr(dvrId, d => ({ ...d, cameras: [...d.cameras, createCamera(`Cámara ${d.cameras.length + 1}`, sys)] })),
-      addCameras: (dvrId, count, sys) => mapDvr(dvrId, d => ({
-        ...d,
-        cameras: [
-          ...d.cameras,
-          ...Array.from({ length: Math.max(1, Math.min(20, count)) }, (_, i) =>
-            createCamera(`Cámara ${d.cameras.length + i + 1}`, sys, false)),
-        ],
-      })),
-      openCopyCamera: (dvrId, camId) => setCopySource({ dvrId, camId }),
-      duplicateCamera: (dvrId, camId) => mapDvr(dvrId, d => {
-        const index = d.cameras.findIndex(camera => camera.id === camId);
-        if (index < 0) return d;
-
-        const source = d.cameras[index];
-        const copy: CameraGroup = {
-          ...source,
-          id: uid(),
-          label: `${source.label || 'Cámara'} (copia)`,
-          expanded: true,
-          photos: [],
-          note: '',
-          difficultyPhoto: null,
-          difficultyNote: '',
-          tasks: Object.fromEntries(Object.entries(source.tasks).map(([key, task]) => [key, { ...task }])),
-          difficulties: Object.fromEntries(Object.entries(source.difficulties).map(([key, diff]) => [key, { ...diff }])),
-        };
-
-        const cameras = [...d.cameras];
-        cameras.splice(index + 1, 0, copy);
-        return { ...d, cameras };
-      }),
-      applyCameraToSelected: (dvrId, camId, targetIds) => mapDvr(dvrId, d => {
-        const source = d.cameras.find(camera => camera.id === camId);
-        if (!source) return d;
-
-        const targets = new Set(targetIds);
-        return {
-          ...d,
-          cameras: d.cameras.map(camera => targets.has(camera.id) ? {
-            ...camera,
-            distance: source.distance,
-            height: source.height,
-            cableDistance: source.cableDistance,
-            cableHeight: source.cableHeight,
-            tasks: Object.fromEntries(Object.entries(source.tasks).map(([key, task]) => [key, { ...task }])),
-            difficulties: Object.fromEntries(Object.entries(source.difficulties).map(([key, diff]) => [key, { ...diff }])),
-          } : camera),
-        };
-      }),
-      fullMaintenance: (dvrId) => setDvrGroups(prev => {
-        const scope = prev.filter(dvr => !dvrId || dvr.id === dvrId);
-        const allOn = scope.every(dvr =>
-          Object.values(dvr.maintenance).every(task => task.selected)
-          && dvr.cameras.every(camera => Object.values(camera.tasks).every(task => task.selected)));
-        const selected = !allOn;
-
-        return prev.map(dvr => (dvrId && dvr.id !== dvrId ? dvr : {
-          ...dvr,
-          maintenance: setAllTasks(dvr.maintenance, selected),
-          cameras: dvr.cameras.map(camera => ({ ...camera, tasks: setAllTasks(camera.tasks, selected) })),
-        }));
-      }),
-      updateCamera: (dvrId, camId, patch) => mapCamera(dvrId, camId, c => ({ ...c, ...patch })),
-      removeCamera: (dvrId, camId) =>
-        mapDvr(dvrId, d => ({ ...d, cameras: d.cameras.filter(c => c.id !== camId) })),
-      patchCameraTask: (dvrId, camId, key, patch) =>
-        mapCamera(dvrId, camId, c => ({ ...c, tasks: { ...c.tasks, [key]: { ...c.tasks[key], ...patch } } })),
-      patchCameraDifficulty: (dvrId, camId, key, patch) =>
-        mapCamera(dvrId, camId, c => ({ ...c, difficulties: { ...c.difficulties, [key]: { ...c.difficulties[key], ...patch } } })),
-    };
-  }, []);
-
-  const addDvrGroup = useCallback(() =>
-    setDvrGroups(prev => [...prev, createDvr(`${deviceName} ${prev.length + 1}`, system, true, 0)]),
-    [deviceName, system]);
+  const handleSetPrimaryCameraCount = useCallback((target: number) => {
+    if (!dvrGroups.length) return;
+    const targetId = dvrGroups[0].id;
+    const current = dvrGroups[0].cameras.length;
+    const validCount = Math.max(1, Math.min(64, isNaN(target) ? 1 : target));
+    const diff = validCount - current;
+    if (diff > 0) {
+      actions.addCameras(targetId, diff, system);
+    } else if (diff < 0) {
+      setDvrGroups(prev => prev.map(d => d.id === targetId
+        ? { ...d, cameras: d.cameras.slice(0, validCount) }
+        : d));
+    }
+  }, [dvrGroups, actions, system, setDvrGroups]);
 
   /* ---- cálculos derivados ---- */
   const camerasWithWork = useMemo(() => countCamerasWithWork(dvrGroups, system), [dvrGroups, system]);
@@ -524,69 +525,63 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
   }, []);
 
   const handleReset = useCallback(() => {
-    if (window.confirm('¿Empezar un cálculo nuevo? Se descarta el actual.')) resetCalculator();
+    if (window.confirm(
+      'Se reemplazará la configuración actual por un kit base de cuatro cámaras. Se seleccionarán la limpieza general y todos los materiales del catálogo con sus cantidades predeterminadas. Revise las cantidades antes de cotizar. ¿Desea continuar?',
+    )) resetCalculator();
   }, [resetCalculator]);
-
-  /* Cámara de origen y grabador para el selector de copia. */
-  const copyTarget = useMemo(() => {
-    if (!copySource) return null;
-    const dvr = dvrGroups.find(group => group.id === copySource.dvrId);
-    const cam = dvr?.cameras.find(camera => camera.id === copySource.camId);
-    return dvr && cam ? { dvr, cam } : null;
-  }, [copySource, dvrGroups]);
 
   return (
     <>
       <Modal show={show} onHide={onHide} size="xl" centered scrollable dialogClassName="s24-service-calculator-modal">
-      <Modal.Header closeButton className="border-bottom-0 pb-2">
+      <Modal.Header closeButton className="pb-3">
         <div className="d-flex align-items-center gap-2 gap-md-3 flex-wrap w-100">
-          <div className="rounded-3 bg-primary bg-opacity-10 text-primary p-2"><Calculator size={24} /></div>
+          <span className="calc-header-icon"><Calculator size={22} /></span>
           <div>
-            <Modal.Title className="fw-bold">Calculadora de servicios CCTV</Modal.Title>
-            <div className="small text-muted">S24 Seguridad Electrónica · Cotización preliminar</div>
+            <Modal.Title className="fw-bold mb-0">Calculadora de servicios CCTV</Modal.Title>
+            <div className="small" style={{ color: 'rgba(255,255,255,0.7)' }}>S24 Seguridad Electrónica · Cotización preliminar</div>
           </div>
-          <Button variant="link" size="sm" className="ms-auto text-decoration-none text-nowrap"
+          <Button variant="link" size="sm" className="calc-header-link ms-auto text-decoration-none text-nowrap"
             onClick={() => setShowSaved(true)} title="Plantillas e historial de cálculos">
             <Bookmark size={14} className="me-1" /> Cálculos
           </Button>
-          <Button variant="link" size="sm" className="me-4 text-decoration-none text-nowrap"
-            onClick={handleReset} title="Empezar un cálculo nuevo">
-            <RotateCcw size={14} className="me-1" /> Nuevo cálculo
+          <Button variant="link" size="sm" className="calc-header-link me-md-3 text-decoration-none text-nowrap"
+            onClick={handleReset} title="Restablecer al kit base de mantenimiento para cuatro cámaras">
+            <RotateCcw size={14} className="me-1" /> Restablecer kit
           </Button>
         </div>
       </Modal.Header>
 
-      <Modal.Body className="pt-2" style={{ maxHeight: '78vh', overflowY: 'auto' }}>
-        <Alert variant="light" className="border d-flex align-items-start gap-2 small mb-4">
-          <Info size={18} className="text-primary flex-shrink-0 mt-1" />
-          <span>Use esta herramienta como apoyo comercial. Si la causa de la falla no está confirmada, cotice el diagnóstico y no prometa una reparación específica.</span>
+      <Modal.Body>
+        <Alert variant="light" className="calc-intro d-flex align-items-start gap-2 small mb-4">
+          <Info size={18} style={{ color: '#144779' }} className="flex-shrink-0 mt-1" />
+          <span>“Restablecer kit” carga una base para cuatro cámaras con limpieza general y todos los materiales seleccionados. Se usan las cantidades predeterminadas del catálogo; revíselas y ajuste lo necesario antes de cotizar.</span>
         </Alert>
 
         <Row className="g-4">
           <Col lg={7}>
-            <Card className="border-0 shadow-sm mb-3">
-              <Card.Header className="bg-white border-bottom d-flex justify-content-between align-items-center py-3">
+            <Card className="calc-card mb-3">
+              <Card.Header className="d-flex justify-content-between align-items-center">
                 <Step n={1}><strong>Seleccione el servicio</strong></Step>
-                <Badge bg="light" text="dark">{SERVICE_ENTRIES.length} opciones</Badge>
+                <span className="calc-section-badge">{SERVICE_ENTRIES.length} opciones</span>
               </Card.Header>
               <Card.Body>
                 <ServiceGrid selected={selectedService} onSelect={setSelectedService} />
               </Card.Body>
             </Card>
 
-            <Card className="border-0 shadow-sm mb-3">
-              <Card.Header className="bg-white border-bottom py-3">
+            <Card className="calc-card mb-3">
+              <Card.Header>
                 <Step n={2}><strong>Datos del servicio</strong></Step>
               </Card.Header>
               <Card.Body>
                 <Row className="g-3">
                   {isMaintenance && (
-                    <Col xs={12} className="mb-2">
+                    <Col md={6} className="mb-2">
                       <Form.Group>
                         <Form.Label className="small fw-bold">Tipo de Sistema CCTV</Form.Label>
                         <div className="d-flex gap-2">
                           {(Object.keys(SYSTEMS) as SystemType[]).map(type => (
-                            <Button key={type} className="w-50"
+                            <Button key={type} className={`calc-system-toggle w-50 ${system === type ? 'active' : ''}`}
                               variant={system === type ? 'primary' : 'outline-secondary'}
                               onClick={() => handleSystemChange(type)}>
                               {SYSTEMS[type].label}
@@ -594,6 +589,62 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
                           ))}
                         </div>
                       </Form.Group>
+                    </Col>
+                  )}
+
+                  {isMaintenance && (
+                    <Col md={6} className="mb-2">
+                      <Form.Label className="small fw-semibold d-flex justify-content-between align-items-center mb-1">
+                        <span>Cantidad de cámaras (Grabador 1)</span>
+                        <span className="text-muted" style={{ fontSize: '0.75rem' }}>{primaryDvrCameraCount} actual(es)</span>
+                      </Form.Label>
+                      <div className="d-flex align-items-center gap-2">
+                        {/* Celda para aumentar o disminuir de uno en uno */}
+                        <InputGroup size="sm" style={{ width: '115px' }} className="flex-shrink-0">
+                          <Button
+                            variant="outline-secondary"
+                            className="px-2"
+                            onClick={() => handleSetPrimaryCameraCount(primaryDvrCameraCount - 1)}
+                            disabled={primaryDvrCameraCount <= 1}
+                            title="Disminuir 1 cámara"
+                          >
+                            <Minus size={13} />
+                          </Button>
+                          <Form.Control
+                            type="number"
+                            min={1}
+                            max={64}
+                            className="text-center px-1 fw-bold"
+                            value={primaryDvrCameraCount}
+                            onChange={e => handleSetPrimaryCameraCount(parseInt(e.target.value, 10))}
+                            aria-label="Cantidad de cámaras en Grabador 1"
+                          />
+                          <Button
+                            variant="outline-secondary"
+                            className="px-2"
+                            onClick={() => handleSetPrimaryCameraCount(primaryDvrCameraCount + 1)}
+                            disabled={primaryDvrCameraCount >= 64}
+                            title="Aumentar 1 cámara"
+                          >
+                            <Plus size={13} />
+                          </Button>
+                        </InputGroup>
+
+                        {/* Presets rápidos */}
+                        <div className="d-flex gap-1 flex-grow-1">
+                          {[4, 8, 16].map(num => (
+                            <Button
+                              key={num}
+                              variant={primaryDvrCameraCount === num ? 'primary' : 'outline-secondary'}
+                              size="sm"
+                              className="flex-fill px-1 text-nowrap"
+                              onClick={() => handleSetPrimaryCameraCount(num)}
+                            >
+                              {num} Cams
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
                     </Col>
                   )}
 
@@ -607,6 +658,22 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
                     <Col md={6}>
                       <SelectField id="service-known-cause" label="¿La causa está identificada?"
                         options={KNOWN_CAUSE_OPTIONS} {...bind('knownCause')} />
+                    </Col>
+                  )}
+
+                  {isMaintenance && (
+                    <Col xs={12}>
+                      <KitsSelectorPanel
+                        system={system}
+                        kits={kits}
+                        activeKitId={activeKitId}
+                        dvrGroups={dvrGroups}
+                        prices={prices}
+                        onSetActiveKitId={setActiveKitId}
+                        onApplyKitConfirm={handleApplyKitConfirm}
+                        onSaveKits={handleSaveKits}
+                        collapsible
+                      />
                     </Col>
                   )}
 
@@ -634,7 +701,7 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
                         </div>
                       </div>
 
-                      <Alert variant="info" className="py-2 px-3 small mb-3 border-info bg-info bg-opacity-10">
+                      <Alert variant="info" className="calc-cap-alert py-2 px-3 small mb-3">
                         <div className="d-flex justify-content-between align-items-start gap-2 flex-wrap">
                           <div>
                             <strong>Tope de mano de obra por cámara:</strong> {ignoreCap ? 'no aplicado' : money(laborCap)}
@@ -679,8 +746,8 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
                     <Col xs={12}>
                       <Panel className="mt-4">
                         <PanelHeader
-                          title="Materiales adicionales"
-                          hint="Repuestos o consumibles (fuentes, baluns, cable, cámaras, etc.). No incluyen mano de obra."
+                          title="Accesorios y repuestos del kit"
+                          hint="Incluye fuentes, adaptadores de video, cable, cámaras, cajas de paso, batería y conectores. Al restablecer se selecciona cada material con su cantidad inicial; revísela antes de cotizar. La instalación se cobra por separado."
                         />
                         <ItemRows defs={MAINTENANCE_MATERIALS} state={maintenanceMaterials} patch={patchMaterial} />
                       </Panel>
@@ -749,10 +816,10 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
               </Card.Body>
             </Card>
 
-            <Card className="border-0 shadow-sm">
-              <Card.Header className="bg-white d-flex justify-content-between align-items-center py-3">
+            <Card className="calc-card">
+              <Card.Header className="calc-config-header d-flex justify-content-between align-items-center py-3">
                 <div className="d-flex align-items-center gap-2">
-                  <Settings size={17} className="text-secondary" />
+                  <Settings size={17} style={{ color: '#64748b' }} />
                   <strong className="small">Configuración de precios</strong>
                 </div>
                 <div className="d-flex align-items-center gap-3">
@@ -780,8 +847,8 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
           </Col>
 
           <Col lg={5}>
-            <Card className="border-0 shadow-sm h-100">
-              <Card.Header className="bg-white border-bottom py-3">
+            <Card className="calc-card h-100">
+              <Card.Header>
                 <Step n={3}>
                   <div>
                     <strong>Resumen de cotización</strong>
@@ -800,7 +867,7 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
                   </Alert>
                 )}
 
-                <Alert variant={result.direct ? 'success' : 'warning'} className="border-0">
+                <Alert variant={result.direct ? 'success' : 'warning'} className="calc-summary-result">
                   <div className="d-flex align-items-start gap-2">
                     <ClipboardList size={19} className="flex-shrink-0 mt-1" />
                     <div>
@@ -827,36 +894,40 @@ export function CalcularServicios({ show, onHide, onAddItems, customerName }: Ca
                   <Row2 className="small mb-2"
                     l={<span className="text-muted">{applyTax ? `IVA estimado (${taxRate}%)` : 'IVA: no aplica'}</span>}
                     r={money(estimatedTax)} />
-                  <div className="d-flex justify-content-between align-items-end border-top pt-3 mt-2">
+                  <div className="calc-total-box d-flex justify-content-between align-items-end mt-3">
                     <div>
                       <div className="small text-uppercase text-muted fw-bold">{applyTax ? 'Total estimado con IVA' : 'Total estimado (sin IVA)'}</div>
                       <div className="small text-muted">COP · sujeto a validación</div>
                     </div>
-                    <div className="fs-3 fw-bold text-primary text-end">{money(estimatedTotal)}</div>
+                    <div className="calc-total-amount text-end">{money(estimatedTotal)}</div>
                   </div>
                 </div>
 
-                <Card className="bg-light border-0 mt-4">
-                  <Card.Body>
-                    <div className="small text-uppercase text-muted fw-bold">Guion sugerido para el vendedor</div>
-                    <p className="small mt-2 mb-0">{result.script}</p>
-                  </Card.Body>
-                </Card>
+                <div className="calc-script-box mt-4">
+                  <div className="small text-uppercase text-muted fw-bold">Guion sugerido para el vendedor</div>
+                  <p className="small mt-2 mb-0">{result.script}</p>
+                </div>
 
-                <div className="mt-auto pt-3">
-                  <Button variant="primary" className="w-100 py-2 fw-semibold" onClick={handleAddToQuote}>
+                <div className="calc-summary-footer mt-auto pt-3">
+                  <Button variant="primary" className="calc-cta w-100 py-2 fw-semibold" onClick={handleAddToQuote}>
                     <PlusCircle size={17} className="me-2" />Agregar conceptos a cotización
                   </Button>
-                  <Button variant="outline-primary" className="w-100 mt-2" onClick={previewPdf}>
+                  <Button variant="outline-primary" className="calc-cta w-100 mt-2" onClick={previewPdf}>
                     <Eye size={16} className="me-2" />Vista previa del PDF
                   </Button>
-                  <Button variant="outline-success" className="w-100 mt-2" onClick={shareWhatsApp}>
-                    <Send size={16} className="me-2" />Enviar por WhatsApp
-                  </Button>
-                  <Button variant="outline-secondary" className="w-100 mt-2" onClick={copyQuote}>
-                    <Copy size={16} className="me-2" />Copiar resumen
-                  </Button>
-                  <div className="small text-muted mt-3">
+                  <Row className="g-2 mt-2">
+                    <Col xs={6}>
+                      <Button variant="outline-success" className="calc-cta w-100" onClick={shareWhatsApp}>
+                        <Send size={15} className="me-1" />WhatsApp
+                      </Button>
+                    </Col>
+                    <Col xs={6}>
+                      <Button variant="outline-secondary" className="calc-cta w-100" onClick={copyQuote}>
+                        <Copy size={15} className="me-1" />Copiar
+                      </Button>
+                    </Col>
+                  </Row>
+                  <div className="calc-footnote mt-3">
                     {applyTax
                       ? 'El IVA mostrado es una estimación. Confirme la configuración tributaria de cada concepto en el ERP antes de emitir la cotización definitiva.'
                       : 'El IVA está apagado: los conceptos se agregarán con 0% de IVA.'}

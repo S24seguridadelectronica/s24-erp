@@ -1,5 +1,8 @@
-﻿import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Modal, Button, Form, Row, Col, Card, Alert, Badge } from 'react-bootstrap';
+
+import { INITIAL_KITS } from './kits/types';
+
 import { Calculator, PlusCircle, Download } from 'lucide-react';
 
 // ============================================================

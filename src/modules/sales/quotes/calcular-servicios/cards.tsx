@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Badge, Button, Card, Col, Form, InputGroup, Row } from 'react-bootstrap';
 import {
   AlertTriangle, ArrowUp, Camera, ChevronDown, ChevronUp, Copy, Files, HardDrive, MapPin, PlusCircle, Ruler, Trash2, Video, Wrench, Zap,
@@ -170,17 +170,17 @@ export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices,
             </div>
 
             <div className="small text-muted mb-2 fst-italic bg-white p-2 rounded border">
-              * Precios base para 0-3 m de altura y 0-10 m de distancia sin obstáculos.
-              Los metros extra se suman al valor de la cámara aunque la mano de obra esté topada: {money(prices.pAccessDistance)}/m de distancia y {money(prices.pAccessHeight)}/m de altura.
+              * El servicio estándar incluye de 0 a 10 m de distancia al grabador (o a la toma de energía en cámaras inalámbricas/WiFi) y de 0 a 3 m de altura.
+              Los metros adicionales sobre esa base se cobran dentro del valor de esta misma cámara: {money(prices.pAccessDistance)}/m de distancia y {money(prices.pAccessHeight)}/m de altura.
             </div>
 
             <Row className="g-2 mb-3">
               <Col sm={6}>
-                <NumField id={`cam-dist-${cam.id}`} size="sm" icon={MapPin} unit="m" label="Distancia al grabador (0–10 m base)"
+                <NumField id={`cam-dist-${cam.id}`} size="sm" icon={MapPin} unit="m" label="Distancia al grabador o toma (0–10 m base incluida)"
                   value={cam.distance} onChange={setDistance} />
               </Col>
               <Col sm={6}>
-                <NumField id={`cam-height-${cam.id}`} size="sm" icon={ArrowUp} unit="m" label="Altura (0–3 m base)"
+                <NumField id={`cam-height-${cam.id}`} size="sm" icon={ArrowUp} unit="m" label="Altura de servicio (0–3 m base incluida)"
                   value={cam.height} onChange={setHeight} />
               </Col>
             </Row>
@@ -188,8 +188,8 @@ export const CameraCard = memo(function CameraCard({ dvrId, cam, system, prices,
             {acc.total > 0 && (
               <div className="mb-3">
                 <Breakdown rows={[
-                  [acc.extraDistance > 0 ? `${acc.extraDistance} m dist extra × ${money(acc.distanceRate)}/m` : 'Sin excedente de distancia', acc.distanceCost],
-                  [acc.extraHeight > 0 ? `${acc.extraHeight} m alt extra × ${money(prices.pAccessHeight)}/m` : 'Sin excedente de altura', acc.heightCost],
+                  [acc.extraDistance > 0 ? `${acc.extraDistance} m dist extra (sobre 10 m) × ${money(acc.distanceRate)}/m` : 'Distancia dentro de base (0–10 m)', acc.distanceCost],
+                  [acc.extraHeight > 0 ? `${acc.extraHeight} m alt extra (sobre 3 m) × ${money(prices.pAccessHeight)}/m` : 'Altura dentro de base (0–3 m)', acc.heightCost],
                   ['Dificultades adicionales', acc.difficultyCost],
                 ]} />
               </div>
@@ -234,27 +234,60 @@ export interface DvrCardProps {
 }
 
 export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, actions, noCap = false }: DvrCardProps) {
-  const { deviceName, dvrTasks } = SYSTEMS[system];
+  // ---- Derive basic values ---------------------------------------------------
+  const { deviceName, dvrTasks, cameraTasks } = SYSTEMS[system];
+  const camCount = dvr.cameras.length;
+  const dynamicTitle = `${dvr.label} de ${camCount} cámara${camCount !== 1 ? 's' : ''}`;
+
+  // ---- Accessibility calculations (must be before usage) --------------------
   const acc = useMemo(() => dvrAccess(dvr, prices), [dvr, prices]);
+
+  // ---- Maintenance base total ------------------------------------------------
   const maintenanceTotal = useMemo(() => sumSelected(dvr.maintenance), [dvr.maintenance]);
 
-  /* Mismo tope por volumen que la cámara: a más servicios, menor el tope. */
+  // ---- Count of maintenance services (for labor cap) -----------------------
   const maintenanceServices = useMemo(
     () => Object.values(dvr.maintenance).filter(task => task.selected && lineTotal(task) > 0).length,
     [dvr.maintenance],
   );
-  const maintenanceTier = getLaborCap(maintenanceServices);
-  const maintenanceCharged = noCap ? maintenanceTotal : Math.min(maintenanceTotal, maintenanceTier.cap);
-  const capApplied = !noCap && maintenanceTotal > maintenanceCharged;
 
-  /* Excesos que se suman siempre, aunque no se cobre la base de accesibilidad. */
+  // ---- Labor cap tier --------------------------------------------------------
+  const maintenanceTier = getLaborCap(maintenanceServices);
+
+  // ---- Maintenance charged (respecting noCap flag) ---------------------------
+  const maintenanceCharged = noCap ? maintenanceTotal : Math.min(maintenanceTotal, maintenanceTier.cap);
+  const capApplied = maintenanceCharged !== maintenanceTotal;
+
+  // ---- Extras always added (distance/height/channel/difficulty) -------------
+  // ---- Access rows for DVR breakdown (used by Breakdown component) ----
   const accessExtras = acc.distanceCost + acc.heightCost + acc.channelCost + acc.difficultyCost;
-  const accessRows: [string, number][] = [
-    ...(dvr.included ? [['Base (0–10 m / 0–3 m / 0–4 canales)', acc.base] as [string, number]] : []),
-    [acc.extraDistance > 0 ? `${acc.extraDistance} m dist × ${money(prices.pDvrAccessDistance)}/m` : 'Sin metros adicionales', acc.distanceCost],
-    [acc.extraHeight > 0 ? `${acc.extraHeight} m alt × ${money(prices.pDvrAccessHeight)}/m` : 'Sin metros de altura', acc.heightCost],
-    [acc.extraChannels > 0 ? `${acc.extraChannels} canal(es) extra × ${money(prices.pDvrExtraChannel)}` : 'Sin canales adicionales', acc.channelCost],
+  const accessRows: [ReactNode, number][] = [
+    [acc.extraDistance > 0 ? `${acc.extraDistance} m dist extra × ${money(prices.pDvrAccessDistance)}/m` : 'Distancia dentro de base (0–10 m)', acc.distanceCost],
+    [acc.extraHeight > 0 ? `${acc.extraHeight} m alt extra × ${money(prices.pDvrAccessHeight)}/m` : 'Altura dentro de base (0–3 m)', acc.heightCost],
+    [`Canales extra (${acc.extraChannels}) × ${money(prices.pDvrExtraChannel)}/canal`, acc.channelCost],
+    ['Dificultades adicionales', acc.difficultyCost],
   ];
+
+  // ---- Total price for DVR (including accessibility & maintenance) -----------
+  const dvrTotal = (dvr.included ? acc.total : accessExtras) + maintenanceCharged;
+
+  // ---- Total price for all cameras ------------------------------------------
+
+  const camerasTotal = useMemo(() => {
+    return dvr.cameras.reduce((sum, cam) => {
+      const camLabor = Object.values(cam.tasks).reduce(
+        (s, t) => (t?.selected ? s + lineTotal(t) : s),
+        0,
+      );
+      const camAcc = cameraAccess(cam, prices);
+      return sum + camLabor + camAcc.total;
+    }, 0);
+  }, [dvr.cameras, prices]);
+
+  // ---- Full kit total -------------------------------------------------------
+  const kitTotal = dvrTotal + camerasTotal;
+
+  // ---- UI helpers -----------------------------------------------------------
   const set = useCallback((patch: Partial<DvrGroup>) => actions.updateDvr(dvr.id, patch), [actions, dvr.id]);
   const patchMaintenance = useCallback(
     (key: string, p: Partial<MaterialState>) => actions.patchDvrTask(dvr.id, key, p),
@@ -266,19 +299,20 @@ export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, a
   );
   const addCamera = useCallback(() => actions.addCamera(dvr.id, system), [actions, dvr.id, system]);
   const [newCameraCount, setNewCameraCount] = useState('1');
-
-  /* ¿Todos los servicios del grabador y sus cámaras están marcados? */
-  const fullOn = useMemo(
-    () => Object.values(dvr.maintenance).every(task => task.selected)
-      && dvr.cameras.every(camera => Object.values(camera.tasks).every(task => task.selected)),
-    [dvr],
-  );
-
   const addCameras = useCallback(() => {
     const count = Math.max(1, Math.min(20, Number(newCameraCount) || 1));
     actions.addCameras(dvr.id, count, system);
     setNewCameraCount('1');
   }, [actions, dvr.id, system, newCameraCount]);
+
+
+  const fullOn = useMemo(
+    () =>
+      Object.values(dvr.maintenance).every(task => task.selected) &&
+      dvr.cameras.every(camera => Object.values(camera.tasks).every(task => task.selected)),
+    [dvr],
+  );
+
 
   return (
     <Card className={`mb-4 border-0 shadow-sm ${!dvr.active ? 'opacity-50' : ''}`}>
@@ -349,24 +383,24 @@ export const DvrCard = memo(function DvrCard({ dvr, system, prices, canRemove, a
 
           <div className="text-muted small mt-1 mb-2">
             {dvr.included
-              ? 'Base: 0–10 m al tomacorriente, 0–3 m de altura y hasta 4 canales.'
-              : 'Sin base: los metros extra, canales y dificultades se cobran aparte.'}
+              ? 'Base incluida: 0–10 m al tomacorriente, 0–3 m de altura y hasta 4 canales. Los excedentes y dificultades se cobran dentro del servicio de este mismo grabador.'
+              : 'Sin base: los metros de distancia sobre 10 m, altura sobre 3 m, canales adicionales y dificultades se cobran dentro del servicio de este grabador.'}
           </div>
 
           <Row className="g-2 mt-1">
-                <Col md={4}>
-                  <NumField id={`dvr-dist-${dvr.id}`} size="sm" icon={MapPin} unit="m" label="Dist. al tomacorriente (0–10 m base)"
-                    value={dvr.distance} onChange={v => set({ distance: v })} />
-                </Col>
-                <Col md={4}>
-                  <NumField id={`dvr-height-${dvr.id}`} size="sm" icon={ArrowUp} unit="m" label="Altura (0–3 m base)"
-                    value={dvr.height} onChange={v => set({ height: v })} />
-                </Col>
-                <Col md={4}>
-                  <NumField id={`dvr-channels-${dvr.id}`} size="sm" icon={Video} unit="canales" label="Canales ocupados"
-                    value={dvr.channels} onChange={v => set({ channels: v })} />
-                </Col>
-              </Row>
+            <Col md={4}>
+              <NumField id={`dvr-dist-${dvr.id}`} size="sm" icon={MapPin} unit="m" label="Dist. al tomacorriente (0–10 m base incluida)"
+                value={dvr.distance} onChange={v => set({ distance: v })} />
+            </Col>
+            <Col md={4}>
+              <NumField id={`dvr-height-${dvr.id}`} size="sm" icon={ArrowUp} unit="m" label="Altura del grabador (0–3 m base incluida)"
+                value={dvr.height} onChange={v => set({ height: v })} />
+            </Col>
+            <Col md={4}>
+              <NumField id={`dvr-channels-${dvr.id}`} size="sm" icon={Video} unit="canales" label="Canales ocupados (hasta 4 base)"
+                value={dvr.channels} onChange={v => set({ channels: v })} />
+            </Col>
+          </Row>
 
               <div className="mb-3">
                 <Breakdown rows={accessRows} />
