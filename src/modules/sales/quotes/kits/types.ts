@@ -426,14 +426,36 @@ function getTaskUnitPrice(taskKey: string, system: SystemType): number {
   return foundDvr ? foundDvr.defaultPrice : 0;
 }
 
-/** Precio total del kit (mano de obra de cámaras + grabador) según la
- *  cantidad de cámaras configurada. Reutiliza los precios del catálogo. */
-export function getKitTotalPrice(kit: MaintenanceKit, cameraCount: number, system: SystemType): number {
+/** Precio total del kit (mano de obra de cámaras + grabador + recargos por distancia/altura)
+ *  según la cantidad de cámaras configurada y los parámetros del sitio. Reutiliza los precios del catálogo. */
+export function getKitTotalPrice(
+  kit: MaintenanceKit,
+  cameraCount: number,
+  system: SystemType,
+  siteParams?: { avgDistance?: number; avgHeight?: number; prices?: Record<string, number> }
+): number {
   const cameras = Math.max(0, cameraCount);
   const cameraLabor = kit.cameraTasks.reduce((sum, key) => sum + getTaskUnitPrice(key, system), 0) * cameras;
   // Los servicios de grabador se cobran una vez por equipo (se asume 1 grabador).
   const dvrLabor = kit.dvrTasks.reduce((sum, key) => sum + getTaskUnitPrice(key, system), 0);
-  return cameraLabor + dvrLabor;
+
+  // Recargos por distancia y altura por punto de cámara (si aplican)
+  let accessSurcharge = 0;
+  if (siteParams && cameras > 0) {
+    const distRate = siteParams.prices?.pAccessDistance ?? 1500;
+    const heightRate = siteParams.prices?.pAccessHeight ?? 15000;
+    const dist = siteParams.avgDistance ?? 0;
+    const h = siteParams.avgHeight ?? 0;
+
+    // Distancia base incluida: 0-10m. Si supera la base se cobra el exceso por cámara
+    const extraDist = Math.max(0, dist - 10);
+    // Altura base incluida: 0-3m. Si supera la base se cobra el exceso por cámara
+    const extraHeight = Math.max(0, h - 3);
+
+    accessSurcharge = (extraDist * distRate + extraHeight * heightRate) * cameras;
+  }
+
+  return cameraLabor + dvrLabor + accessSurcharge;
 }
 
 /** Título dinámico del kit según la cantidad de cámaras configurada. */

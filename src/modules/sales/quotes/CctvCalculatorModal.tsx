@@ -301,6 +301,14 @@ export function CctvCalculatorModal({ show, onHide, onAddItems }: CctvCalculator
   const [userModifiedPower, setUserModifiedPower] = useState(false);
   const [userModifiedPoe, setUserModifiedPoe] = useState(false);
 
+  // --- VARIABLES MODELO v2.0 ---
+  // Cámaras fuera del perímetro base (para analógicas o IP por perímetro)
+  const [isolatedCams, setIsolatedCams] = useState(0); // 0, 1 o 2
+  const [isolatedDist, setIsolatedDist] = useState(40); // Metros de la cámara aislada
+  // Distancias individuales opcionales para IP
+  const [useCustomIpDistances, setUseCustomIpDistances] = useState(false);
+  const [customIpDistances, setCustomIpDistances] = useState<number[]>([]);
+
   // Reset video cable when connection changes
   useMemo(() => {
     const cfg = CONNECTIONS[connection];
@@ -308,28 +316,94 @@ export function CctvCalculatorModal({ show, onHide, onAddItems }: CctvCalculator
     setVideoCable(firstVideo);
   }, [connection]);
 
+  // Distancias individuales sincronizadas con el número de cámaras
+  const effectiveIpDistances = useMemo(() => {
+    // Si el usuario especificó distancias personalizadas, las respetamos
+    const list = [...customIpDistances];
+    // Calcular distancia perimétrica estimada por cámara como base
+    const baseRoute = Math.ceil((Math.max(sideA, sideB) / 2) * cams + sideA + sideB + height * cams);
+    const defaultCamDist = Math.max(1, Math.round(baseRoute / cams));
+
+    while (list.length < cams) {
+      list.push(defaultCamDist);
+    }
+    return list.slice(0, cams);
+  }, [cams, customIpDistances, sideA, sideB, height]);
+
   // Reset power cable recommendation when cams/dist changes (only if not manually modified)
   useMemo(() => {
     if (!userModifiedPower && CONNECTIONS[connection].power) {
-      const routeM = Math.ceil((Math.max(sideA, sideB) / 2) * cams + sideA + sideB + height * cams);
-      const avg = routeM / cams;
+      const isAnalog = connection.startsWith('analog_');
+      let routeM = 0;
+      if (isAnalog) {
+        if (isolatedCams === 1 || isolatedCams === 2) {
+          const camsBase = Math.max(1, cams - isolatedCams);
+          const metrosBase = (Math.max(sideA, sideB) / 2) * camsBase + sideA + sideB + (height * camsBase);
+          const metrosAislados = (isolatedDist * isolatedCams) + (height * isolatedCams);
+          routeM = Math.ceil(metrosBase + metrosAislados);
+        } else {
+          routeM = Math.ceil((Math.max(sideA, sideB) / 2) * cams + sideA + sideB + (height * cams));
+        }
+      } else {
+        routeM = useCustomIpDistances
+          ? Math.ceil(effectiveIpDistances.reduce((a, b) => a + b, 0))
+          : Math.ceil((Math.max(sideA, sideB) / 2) * cams + sideA + sideB + (height * cams));
+      }
+      const avg = cams > 0 ? routeM / cams : 0;
       setPowerCable(getRecommendedPower(cams, avg));
     }
-  }, [cams, sideA, sideB, height, connection, userModifiedPower]);
+  }, [cams, sideA, sideB, height, connection, userModifiedPower, isolatedCams, isolatedDist, useCustomIpDistances, effectiveIpDistances]);
 
   const calc = useMemo(() => {
     const cfg = CONNECTIONS[connection];
     const video = parseCable(videoCable);
     const power = parseCable(powerCable);
+    const isAnalog = connection.startsWith('analog_');
 
-    const routeMeters = Math.ceil((Math.max(sideA, sideB) / 2) * cams + sideA + sideB + height * cams);
-    const avgDistExact = routeMeters / cams;
+    // 1. CÁLCULO DE METROS SEGÚN TECNOLOGÍA (Modelo v2.0)
+    let routeMeters = 0;
+    let cameraDistances: number[] = [];
+
+    if (isAnalog) {
+      if (isolatedCams === 1 || isolatedCams === 2) {
+        const camsBase = Math.max(1, cams - isolatedCams);
+        const metrosBase = (Math.max(sideA, sideB) / 2) * camsBase + sideA + sideB + (height * camsBase);
+        const metrosAislados = (isolatedDist * isolatedCams) + (height * isolatedCams);
+        routeMeters = Math.ceil(metrosBase + metrosAislados);
+
+        const avgBase = metrosBase / camsBase;
+        cameraDistances = Array(camsBase).fill(avgBase).concat(Array(isolatedCams).fill(isolatedDist + height));
+      } else {
+        routeMeters = Math.ceil((Math.max(sideA, sideB) / 2) * cams + sideA + sideB + (height * cams));
+        const avg = routeMeters / cams;
+        cameraDistances = Array(cams).fill(avg);
+      }
+    } else {
+      // Rama IP: distancias individuales si están activas o estimación perimétrica
+      if (useCustomIpDistances) {
+        cameraDistances = effectiveIpDistances;
+        routeMeters = Math.ceil(cameraDistances.reduce((sum, d) => sum + d, 0));
+      } else {
+        if (isolatedCams === 1 || isolatedCams === 2) {
+          const camsBase = Math.max(1, cams - isolatedCams);
+          const metrosBase = (Math.max(sideA, sideB) / 2) * camsBase + sideA + sideB + (height * camsBase);
+          const metrosAislados = (isolatedDist * isolatedCams) + (height * isolatedCams);
+          routeMeters = Math.ceil(metrosBase + metrosAislados);
+
+          const avgBase = metrosBase / camsBase;
+          cameraDistances = Array(camsBase).fill(avgBase).concat(Array(isolatedCams).fill(isolatedDist + height));
+        } else {
+          routeMeters = Math.ceil((Math.max(sideA, sideB) / 2) * cams + sideA + sideB + (height * cams));
+          const avg = routeMeters / cams;
+          cameraDistances = Array(cams).fill(avg);
+        }
+      }
+    }
+
+    const avgDistExact = cams > 0 ? routeMeters / cams : 0;
     const avgDist = Math.round(avgDistExact);
 
-    const extraHeight = Math.max(0, height - 3);
-    const extraDist = Math.max(0, avgDistExact - 10);
-
-    // Dimensionamiento automático
+    // 2. DIMENSIONAMIENTO AUTOMÁTICO
     const sizing = calcularDimensionamiento(cams, routeMeters, ductGroup);
 
     // Tarifa de mano de obra promedio ponderada
@@ -337,9 +411,34 @@ export function CctvCalculatorModal({ show, onHide, onAddItems }: CctvCalculator
       ? sizing.segments.reduce((a, s) => a + s.duct.laborRate * s.meters, 0) / routeMeters
       : (DUCT.tubo_pvc_12?.laborRate || 75000);
 
-    // Recargos usando la altura/distancia promedio
-    const heightSurcharge = extraHeight * (sizing.segments[0]?.duct.heightRate || 15000) * cams;
-    const distSurcharge = extraDist * (sizing.segments[0]?.duct.distRate || 2000) * cams;
+    const extraHeight = Math.max(0, height - 3);
+    const heightRate = sizing.segments[0]?.duct.heightRate || 15000;
+    const distRate = sizing.segments[0]?.duct.distRate || 2000;
+
+    // Recargo por altura
+    const heightSurcharge = extraHeight * heightRate * cams;
+
+    // 3. RECARGO POR DISTANCIA (Modelo v2.0 - Sin diluir en promedios)
+    let distSurcharge = 0;
+    if (isAnalog) {
+      if (isolatedCams === 1 || isolatedCams === 2) {
+        const camsBase = Math.max(1, cams - isolatedCams);
+        const metrosBase = (Math.max(sideA, sideB) / 2) * camsBase + sideA + sideB + (height * camsBase);
+        const excesoBase = Math.max(0, (metrosBase / camsBase) - 10) * camsBase;
+        const excesoAislado = Math.max(0, (isolatedDist + height) - 10) * isolatedCams;
+        distSurcharge = Math.round((excesoBase + excesoAislado) * distRate);
+      } else {
+        const excesoBase = Math.max(0, avgDistExact - 10) * cams;
+        distSurcharge = Math.round(excesoBase * distRate);
+      }
+    } else {
+      // IP: evalúa cámara por cámara el exceso sobre 10m
+      distSurcharge = Math.round(
+        cameraDistances.reduce((acc, d) => acc + Math.max(0, d - 10) * distRate, 0)
+      );
+    }
+
+    const extraDist = cams > 0 ? (distRate > 0 ? distSurcharge / (distRate * cams) : 0) : 0;
 
     // Costo de ductería por segmento
     const ductCost = sizing.segments.reduce((a, s) => a + s.units * s.duct.pricePerUnit, 0);
@@ -371,11 +470,25 @@ export function CctvCalculatorModal({ show, onHide, onAddItems }: CctvCalculator
     const powerCost = cfg.power ? routeMeters * power.price : 0;
     const laborCost = Math.round(cams * avgLaborRate);
 
+    // 4. SWITCHES PoE (Modelo v2.0 - Regla de los 100m por cámara)
+    let extraSwitchesCount = 0;
     let switchCost = 0;
     let switchObj: PoeSwitch | null = null;
-    if (connection === 'ip_poe' && avgDist > 90) {
-      switchObj = POE_SWITCHES.find(s => s.id === poeSwitchId) || POE_SWITCHES[0];
-      switchCost = switchObj.price;
+
+    if (connection === 'ip_poe') {
+      // Contar switches requeridos por tramos superiores a 100 metros
+      cameraDistances.forEach(d => {
+        if (d > 100) {
+          extraSwitchesCount += Math.floor((d - 1) / 100);
+        }
+      });
+
+      // Si hay distancias > 90m o se requiere switch regenerador
+      if (extraSwitchesCount > 0 || avgDist > 90) {
+        switchObj = POE_SWITCHES.find(s => s.id === poeSwitchId) || POE_SWITCHES[0];
+        const switchesToCharge = Math.max(1, extraSwitchesCount);
+        switchCost = switchObj.price * switchesToCharge;
+      }
     }
 
     const total = videoCost + powerCost + ductCost + accessoriesTotal + laborCost + heightSurcharge + distSurcharge + switchCost;
@@ -390,11 +503,15 @@ export function CctvCalculatorModal({ show, onHide, onAddItems }: CctvCalculator
       routeMeters, avgDist, avgDistExact, extraHeight, extraDist,
       heightSurcharge, distSurcharge, totalSurcharges: heightSurcharge + distSurcharge,
       ductCost, videoCost, powerCost, laborCost, avgLaborRate, switchCost, switchObj,
+      extraSwitchesCount, cameraDistances, isAnalog,
       total, physicalMeters, video, power, cfg,
       sizing, ductGroup, accessoryDetails, accessoriesTotal,
       vidComm, pwrComm, pricePerPointTotal
     };
-  }, [sideA, sideB, cams, height, ductGroup, connection, videoCable, powerCable, poeSwitchId]);
+  }, [
+    sideA, sideB, cams, height, ductGroup, connection, videoCable, powerCable,
+    poeSwitchId, isolatedCams, isolatedDist, useCustomIpDistances, effectiveIpDistances
+  ]);
 
   const handleAddToQuote = () => {
     const itemsToAdd: any[] = [
@@ -435,13 +552,14 @@ export function CctvCalculatorModal({ show, onHide, onAddItems }: CctvCalculator
       });
     });
 
-    // Switch PoE si aplica
-    if (calc.switchObj) {
+    // Switch PoE si aplica (Modelo v2.0)
+    if (calc.switchObj && calc.switchCost > 0) {
+      const switchQty = Math.max(1, calc.extraSwitchesCount || 1);
       itemsToAdd.push({
         item_type: 'product' as const,
-        description: `Switch PoE Intermedio: ${calc.switchObj.name}`,
-        quantity: 1,
-        unit_price: calc.switchCost
+        description: `Switch PoE Intermedio: ${calc.switchObj.name} (${switchQty > 1 ? `${switchQty} unidades por distancia >100m` : 'regenerador de señal'})`,
+        quantity: switchQty,
+        unit_price: calc.switchObj.price
       });
     }
 
@@ -473,7 +591,10 @@ export function CctvCalculatorModal({ show, onHide, onAddItems }: CctvCalculator
       accLines += `\n    Subtotal accesorios: ${fmt(calc.accessoriesTotal)}`;
     }
 
-    const switchLine = calc.switchObj ? `\nSwitch PoE Intermedio: ${calc.switchObj.name} = ${fmt(calc.switchCost)}` : '';
+    const switchQty = Math.max(1, calc.extraSwitchesCount || 1);
+    const switchLine = calc.switchObj && calc.switchCost > 0
+      ? `\nSwitch PoE Intermedio: ${calc.switchObj.name} × ${switchQty} und = ${fmt(calc.switchCost)}`
+      : '';
 
     const content = `═══════════════════════════════════════════════════════
   COTIZACIÓN S24 - INSTALACIÓN CCTV
@@ -603,6 +724,126 @@ Generado por Calculadora S24 v3.0
             </Form.Group>
           </Col>
         </Row>
+
+        {/* AJUSTES AVANZADOS DE PERÍMETRO Y RED (MODELO v2.0) */}
+        <Card className="border-secondary border-opacity-25 mb-3 bg-light">
+          <Card.Body className="p-3">
+            <div className="d-flex justify-content-between align-items-center mb-2">
+              <strong className="small text-secondary">
+                🌐 CRITERIO DE RED Y PERÍMETRO (MODELO v2.0)
+              </strong>
+              {connection.startsWith('ip_') && (
+                <Form.Check
+                  type="switch"
+                  id="switch-custom-ip"
+                  label={<span className="small fw-semibold">Detallar distancias IP individuales</span>}
+                  checked={useCustomIpDistances}
+                  onChange={(e) => setUseCustomIpDistances(e.target.checked)}
+                />
+              )}
+            </div>
+
+            {/* RAMA ANALÓGICA o IP sin distancias manuales: Cámaras aisladas */}
+            {(!connection.startsWith('ip_') || !useCustomIpDistances) && (
+              <Row className="g-2 align-items-center">
+                <Col md={6}>
+                  <Form.Group>
+                    <Form.Label className="small mb-1">
+                      Cámaras fuera del perímetro base ({sideA}×{sideB}m):
+                    </Form.Label>
+                    <Form.Select
+                      size="sm"
+                      value={isolatedCams}
+                      onChange={(e) => setIsolatedCams(Math.min(cams - 1, Math.max(0, +e.target.value)))}
+                    >
+                      <option value={0}>0 — Todas dentro del perímetro principal (o 3+ lejanas trianguladas)</option>
+                      <option value={1}>1 cámara aislada fuera del área base</option>
+                      {cams > 2 && <option value={2}>2 cámaras aisladas fuera del área base</option>}
+                    </Form.Select>
+                  </Form.Group>
+                </Col>
+                {isolatedCams > 0 && (
+                  <Col md={6}>
+                    <Form.Group>
+                      <Form.Label className="small mb-1">
+                        Distancia lineal independiente de la cámara aislada (m):
+                      </Form.Label>
+                      <Form.Control
+                        size="sm"
+                        type="number"
+                        min="1"
+                        value={isolatedDist}
+                        onChange={(e) => setIsolatedDist(Math.max(1, +e.target.value || 0))}
+                      />
+                    </Form.Group>
+                  </Col>
+                )}
+                {isolatedCams > 0 && (
+                  <Col xs={12}>
+                    <small className="text-muted fst-italic">
+                      ℹ️ El área principal ({sideA}×{sideB}m) cubre {cams - isolatedCams} cámaras. La(s) {isolatedCams} cámara(s) aislada(s) sumará(n) {isolatedDist}m directo al grabador sin inflar el perímetro total del local.
+                    </small>
+                  </Col>
+                )}
+              </Row>
+            )}
+
+            {/* RAMA IP: Lista individual de distancias */}
+            {connection.startsWith('ip_') && useCustomIpDistances && (
+              <div>
+                <small className="text-muted d-block mb-2">
+                  Ingresa la distancia (metros lineales al switch/NVR) de cada una de las {cams} cámaras.
+                  Cualquier tramo que supere los <strong>100 metros</strong> agregará automáticamente los switches PoE intermedios necesarios (regla IEEE 802.3).
+                </small>
+                <Row className="g-2 row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-6 mb-2">
+                  {effectiveIpDistances.map((dist, idx) => {
+                    const isLong = dist > 100;
+                    return (
+                      <Col key={idx}>
+                        <div className={`p-2 border rounded ${isLong ? 'bg-danger bg-opacity-10 border-danger' : 'bg-white'}`}>
+                          <div className="d-flex justify-content-between small fw-bold mb-1">
+                            <span>Cám {idx + 1}</span>
+                            {isLong && <Badge bg="danger" style={{ fontSize: '0.65rem' }}>&gt;100m</Badge>}
+                          </div>
+                          <Form.Control
+                            size="sm"
+                            type="number"
+                            min="1"
+                            value={dist}
+                            onChange={(e) => {
+                              const val = Math.max(1, +e.target.value || 1);
+                              setCustomIpDistances(prev => {
+                                const next = [...effectiveIpDistances];
+                                next[idx] = val;
+                                return next;
+                              });
+                            }}
+                          />
+                          <div className="text-end text-muted mt-1" style={{ fontSize: '0.7rem' }}>
+                            {dist > 10 && <span className="text-primary">+{dist - 10}m exc.</span>}
+                          </div>
+                        </div>
+                      </Col>
+                    );
+                  })}
+                </Row>
+                <div className="d-flex justify-content-end">
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="p-0 text-muted"
+                    onClick={() => {
+                      const avg = Math.round(calc.routeMeters / cams);
+                      setCustomIpDistances(Array(cams).fill(avg));
+                    }}
+                  >
+                    Restablecer todas a promedio ({Math.round(calc.routeMeters / cams)}m)
+                  </Button>
+                </div>
+              </div>
+            )}
+          </Card.Body>
+        </Card>
 
         {/* CABLES */}
         <Row className="g-2 mb-3">
@@ -736,18 +977,20 @@ Generado por Calculadora S24 v3.0
           </Card.Body>
         </Card>
 
-        {/* SWITCH PoE RECOMENDADO */}
-        {connection === 'ip_poe' && calc.avgDist > 90 && (
+        {/* SWITCH PoE RECOMENDADO (MODELO v2.0) */}
+        {connection === 'ip_poe' && (calc.extraSwitchesCount > 0 || calc.avgDist > 90) && (
           <Card className="border-primary border-opacity-25 mb-3">
             <Card.Header className="bg-primary bg-opacity-10 border-0 py-2 d-flex justify-content-between align-items-center">
-              <strong className="text-primary small">🔌 SWITCH PoE RECOMENDADO</strong>
-              <Badge bg={userModifiedPoe ? "warning" : "primary"} className="ms-2">
-                {userModifiedPoe ? "Selección Manual" : "Recomendación Automática"}
+              <strong className="text-primary small">🔌 SWITCH PoE INTERMEDIO / REGENERADOR (MODELO v2.0)</strong>
+              <Badge bg={calc.extraSwitchesCount > 0 ? "danger" : (userModifiedPoe ? "warning" : "primary")} className="ms-2">
+                {calc.extraSwitchesCount > 0
+                  ? `${calc.extraSwitchesCount} Switch(es) por tramo >100m`
+                  : (userModifiedPoe ? "Selección Manual" : "Recomendación Automática")}
               </Badge>
             </Card.Header>
             <Card.Body className="p-3">
               <Form.Group className="mb-3">
-                <Form.Label className="small mb-1">Switch PoE seleccionado:</Form.Label>
+                <Form.Label className="small mb-1">Modelo de Switch PoE seleccionado:</Form.Label>
                 <Form.Select
                   value={poeSwitchId}
                   onChange={(e) => {
@@ -757,7 +1000,7 @@ Generado por Calculadora S24 v3.0
                 >
                   {POE_SWITCHES.map(s => (
                     <option key={s.id} value={s.id}>
-                      {s.name} ({s.poePorts} Ptos, {s.watts}W) - {fmt(s.price)}
+                      {s.name} ({s.poePorts} Ptos, {s.watts}W) - {fmt(s.price)} c/u
                     </option>
                   ))}
                 </Form.Select>
@@ -766,29 +1009,34 @@ Generado por Calculadora S24 v3.0
                 <Row className="g-2 small mb-3 bg-light rounded p-2">
                   <Col md={6}>
                     <p className="mb-1"><span className="text-muted">Cámaras:</span> <strong>{cams}</strong></p>
-                    <p className="mb-1"><span className="text-muted">Distancia prom.:</span> <strong>{calc.avgDist} m</strong></p>
-                    <p className="mb-1"><span className="text-muted">Switch:</span> <strong className="text-primary">{calc.switchObj.name}</strong></p>
-                    <p className="mb-0"><span className="text-muted">Puertos PoE:</span> {calc.switchObj.poePorts} ({calc.switchObj.uplinkPorts})</p>
+                    <p className="mb-1">
+                      <span className="text-muted">Cantidad a cotizar:</span>{' '}
+                      <strong className="text-danger fs-6">{Math.max(1, calc.extraSwitchesCount || 1)} unidad(es)</strong>
+                    </p>
+                    <p className="mb-1"><span className="text-muted">Modelo:</span> <strong className="text-primary">{calc.switchObj.name}</strong></p>
+                    <p className="mb-0"><span className="text-muted">Puertos:</span> {calc.switchObj.poePorts} ({calc.switchObj.uplinkPorts})</p>
                   </Col>
                   <Col md={6}>
-                    <p className="mb-1"><span className="text-muted">Presupuesto:</span> <span className="text-success">{calc.switchObj.watts} W</span></p>
-                    <p className="mb-1"><span className="text-muted">Uso:</span> {calc.switchObj.type}</p>
-                    <p className="mb-1"><span className="text-muted">Alcance:</span> {calc.switchObj.distConv}m / {calc.switchObj.distExt}m Ext.</p>
-                    <p className="mb-0"><span className="text-muted">Precio:</span> <strong>{fmt(calc.switchObj.price)}</strong></p>
+                    <p className="mb-1"><span className="text-muted">Presupuesto PoE:</span> <span className="text-success">{calc.switchObj.watts} W</span></p>
+                    <p className="mb-1"><span className="text-muted">Precio unitario:</span> {fmt(calc.switchObj.price)}</p>
+                    <p className="mb-1"><span className="text-muted">Total Switches:</span> <strong className="text-primary">{fmt(calc.switchCost)}</strong></p>
+                    <p className="mb-0"><span className="text-muted">Alcance:</span> {calc.switchObj.distConv}m estándar / {calc.switchObj.distExt}m Extendido</p>
                   </Col>
                 </Row>
               )}
-              <Alert variant="primary" className="small mb-0">
-                <div className="fw-semibold mb-1">⚠️ Motivo de la recomendación:</div>
-                <p className="mb-1 small">
-                  La distancia promedio calculada es <strong>{calc.avgDist} m</strong>, superando el límite estándar de 90–100 m para enlaces Ethernet/PoE en Cat 5e/6.
-                </p>
-                <p className="mb-1 small">
-                  <strong>Recomendación:</strong> Instalar un <em>{calc.switchObj?.name}</em> como <strong>switch PoE intermedio</strong> antes de alcanzar los 90 m.
-                  El tramo de red queda dividido en dos segmentos con señal regenerada para las <strong>{cams} cámaras</strong>.
-                </p>
+              <Alert variant={calc.extraSwitchesCount > 0 ? "danger" : "primary"} className="small mb-0">
+                <div className="fw-semibold mb-1">⚠️ Motivo técnico (Regla IEEE 802.3 / 100 metros):</div>
+                {calc.extraSwitchesCount > 0 ? (
+                  <p className="mb-1 small">
+                    Se detectaron tramos de cámaras que superan los <strong>100 metros</strong>. Para evitar pérdida de paquetes y caída de enlace PoE, se requiere(n) <strong>{calc.extraSwitchesCount} switch(es) intermedio(s)</strong> actuando como repetidores/regeneradores de señal.
+                  </p>
+                ) : (
+                  <p className="mb-1 small">
+                    La distancia promedio calculada es <strong>{calc.avgDist} m</strong> (&gt;90 m), superando el margen de seguridad para enlaces directos en Cat 5e/6.
+                  </p>
+                )}
                 <p className="mb-0 font-monospace text-muted small">
-                  Esquema: [Grabador / NVR] ──► [Switch PoE Intermedio] ──► [Cámaras]
+                  Topología: [Grabador / NVR] ──► [Switch PoE Intermedio cada ~90-100m] ──► [Cámara IP]
                 </p>
               </Alert>
             </Card.Body>
@@ -850,10 +1098,13 @@ Generado por Calculadora S24 v3.0
             </div>
 
             {/* SWITCH PoE */}
-            {calc.switchObj && (
+            {calc.switchObj && calc.switchCost > 0 && (
               <div className="d-flex justify-content-between mb-2 small border-top pt-1">
-                <span>Switch PoE Intermedio: {calc.switchObj.name}</span>
-                <strong>{fmt(calc.switchCost)}</strong>
+                <span>
+                  Switch PoE: {calc.switchObj.name}
+                  {calc.extraSwitchesCount > 1 ? ` (${calc.extraSwitchesCount} uds)` : ''}:
+                </span>
+                <strong className="text-primary">{fmt(calc.switchCost)}</strong>
               </div>
             )}
 

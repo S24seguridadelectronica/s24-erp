@@ -45,6 +45,8 @@ export interface KitsSelectorPanelProps {
   dvrGroups: DvrGroup[];
   /** Precios del catálogo para calcular el total del kit (por cantidad de cámaras). */
   prices?: import('../calcular-servicios/catalog').Prices;
+  /** Parámetros promedio de sitio (distancia y altura) calculados para ajustar el precio de las tarjetas */
+  siteParams?: { avgDistance: number; avgHeight: number };
   onSetActiveKitId: (id: string | null) => void;
   onApplyKitConfirm: (kit: MaintenanceKit, options: ApplyKitOptions) => void;
   onSaveKits: (nextKits: MaintenanceKit[]) => void;
@@ -231,6 +233,7 @@ export function KitsSelectorPanel({
   activeKitId,
   dvrGroups,
   prices,
+  siteParams,
   onSetActiveKitId,
   onApplyKitConfirm,
   onSaveKits,
@@ -552,7 +555,9 @@ export function KitsSelectorPanel({
                   const targetVariant = getKitTargetBadgeVariant(kit.target);
                   const groupVariant = getCommercialGroupBadgeVariant(group);
                   const dynamicTitle = getKitDynamicTitle(kit, cameraCount);
-                  const kitTotal = prices ? getKitTotalPrice(kit, cameraCount, system) : null;
+                  const kitTotal = prices
+                    ? getKitTotalPrice(kit, cameraCount, system, siteParams ? { ...siteParams, prices } : undefined)
+                    : null;
 
                   // Extracción de número de kit para badge conciso (ej: KIT 01, KIT 12)
                   const idMatch = kit.id.match(/kit-(\d+)/i);

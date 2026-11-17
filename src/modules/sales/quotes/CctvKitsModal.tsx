@@ -25,6 +25,7 @@ import { DvrCard } from './calcular-servicios/cards';
 import { useCctvGroups } from './calcular-servicios/useCctvGroups';
 import { ItemRows, Panel, PanelHeader, Row2 } from './calcular-servicios/ui';
 import { KitsSelectorPanel } from './kits/KitsSelectorPanel';
+import { CableMeasurementPanel } from './kits/CableMeasurementPanel';
 import {
   applyKitMaterials,
   applyKitToGroups,
@@ -112,6 +113,13 @@ export function CctvKitsModal({
   // Historial y plantillas
   const [savedList, setSavedList] = useState<SavedCalculation[]>(() => readSaved());
   const [showSaved, setShowSaved] = useState(false);
+
+  // Parámetros de sitio sincronizados con la medición inteligente de cableado (Modelo v2.0)
+  const [siteMeasurement, setSiteMeasurement] = useState<{ avgDistance: number; avgHeight: number; isActive: boolean }>({
+    avgDistance: 0,
+    avgHeight: 3,
+    isActive: false,
+  });
 
   const skipDraftOnce = useRef(false);
 
@@ -257,6 +265,37 @@ export function CctvKitsModal({
         : d));
     }
   };
+
+  const handleApplyCableDistances = useCallback((distances: { camId: string; distance: number; height: number }[]) => {
+    const map = new Map(distances.map(d => [d.camId, d]));
+    setDvrGroups(prev =>
+      prev.map(dvr => ({
+        ...dvr,
+        cameras: dvr.cameras.map(cam => {
+          const match = map.get(cam.id);
+          if (!match) return cam;
+
+          // Habilitar la tarea de cableChange si no está activa
+          const currentCableTask = cam.tasks.cableChange;
+          const updatedCableTask = currentCableTask
+            ? { ...currentCableTask, selected: true, quantity: currentCableTask.quantity || 1 }
+            : { selected: true, quantity: 1, unitPrice: prices.pCableDistanceRate || 50000 };
+
+          return {
+            ...cam,
+            distance: String(match.distance),
+            height: String(match.height),
+            cableDistance: String(match.distance),
+            cableHeight: String(match.height),
+            tasks: {
+              ...cam.tasks,
+              cableChange: updatedCableTask,
+            },
+          };
+        }),
+      }))
+    );
+  }, [prices]);
 
   // Cálculos derivados
   const camerasWithWork = useMemo(() => countCamerasWithWork(dvrGroups, system), [dvrGroups, system]);
@@ -487,6 +526,14 @@ export function CctvKitsModal({
           <Row className="g-4">
             {/* COLUMNA IZQUIERDA: CONFIGURADOR DE KITS */}
             <Col lg={7}>
+              {/* MEDICIÓN INTELIGENTE DE CABLEADO (MODELO v2.0) */}
+              <CableMeasurementPanel
+                system={system}
+                dvrGroups={dvrGroups}
+                onApplyCableDistances={handleApplyCableDistances}
+                onSiteParamsChange={setSiteMeasurement}
+              />
+
               {/* PASO 1: EQUIPOS Y SISTEMA */}
               <Card className="border-0 shadow-sm mb-3">
                 <Card.Header className="bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
@@ -587,6 +634,7 @@ export function CctvKitsModal({
                 activeKitId={activeKitId}
                 dvrGroups={dvrGroups}
                 prices={prices}
+                siteParams={siteMeasurement.isActive ? { avgDistance: siteMeasurement.avgDistance, avgHeight: siteMeasurement.avgHeight } : undefined}
                 onSetActiveKitId={setActiveKitId}
                 onApplyKitConfirm={handleApplyKitConfirm}
                 onSaveKits={handleSaveKits}
