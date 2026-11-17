@@ -98,7 +98,7 @@ export interface ItemRowProps {
 }
 
 /**
- * Fila de tarea. El nombre ocupa su propia línea para que en el celular la
+ * Filas de tarea. El nombre ocupa su propia línea para que en el celular la
  * cantidad y el precio no queden fuera de pantalla.
  */
 export const ItemRow = memo(function ItemRow({ def, state, patch, priceWidth, totalOf, disabled, after }: ItemRowProps) {
